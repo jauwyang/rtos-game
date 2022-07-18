@@ -56,7 +56,7 @@ const uint32_t LCD_WIDTH = 240;  // x-axis
 // Sizes and bitmaps
 const uint32_t BALL_SIZE = 5;
 const uint32_t HOLE_SIZE = 5;
-const uint32_t DIRECTION_ARROW_SIZE = 10;
+const uint32_t DIRECTION_ARROW_SIZE = 7;
 
 char ball_bitmap[] = {};
 char hole_bitmap[] = {};
@@ -71,6 +71,10 @@ char arrow_bitmap[] = {};
 // (1) Golf Score
 // (2) Golf Ball State
 // (3) Hole State
+const uint32_t ARROW_BITMAP_SIZE = 15;
+const uint32_t ARROW_BITMAP_MID = (ARROW_BITMAP_SIZE + 1) / 2;
+
+
 void setupGame(void) {
   golfScore = 0;
   
@@ -91,14 +95,27 @@ void setupGame(void) {
   
 }
 
-void drawDirectionArrow(Ball ball) {
-    double mappedDirection = convertAngle(playerDirection);
-    for (uint32_t i = 1; i < DIRECTION_ARROW_SIZE + 1; i++) {  
-        uint32_t x = i*cos(mappedDirection);
-        uint32_t y = i*sin(mappedDirection);
-        
-        GLCD_PutPixel(x + ball->pos.x, y + ball->pos.y);
-    }
+void createArrowBitMap(Ball ball) {
+  double mappedDirection = convertAngle(playerDirection);
+
+  // Initialize Empty Bitmap with 1 at center
+  uint32_t arrow[ARROW_BITMAP_SIZE][ARROW_BITMAP_SIZE] = {0};
+  arrow[ARROW_BITMAP_MID-1][ARROW_BITMAP_MID-1] = 1;  // make center of bit map (where the ball would be) 1
+  
+  // Draw Arrow in 2D Bitmap starting at center of map
+  for (uint32_t i = 1; i < DIRECTION_ARROW_SIZE + 1; i++) {  
+      uint32_t x = round(i*cos(mappedDirection));
+      uint32_t y = round(i*sin(mappedDirection));
+      arrow[x + ARROW_BITMAP_MID - 1][y+ ARROW_BITMAP_MID - 1] = 1;
+      //GLCD_PutPixel(x + ball->pos.x, y + ball->pos.y);
+  }
+
+  char arrowBitMap
+
+
+
+
+
 }
 
 // ================================
@@ -371,6 +388,19 @@ double convertAngle(uint32_t rawAngle) {
     return (rawAngle - MAP_CONVERSION_ANGLE) * 2*M_PI / 360;
 }
 
+uint32_t convertBinaryArrayToDecimal(uint32_t* bits, uint32_t arraySize) {
+  int result = 0;
+
+  for (int i = 0; i < arraySize; i++) {
+    result |= bits[i];
+    if (i != arrraySize - 1) {
+      result <<= 1;
+    }
+  }
+
+  return result;
+}
+
 /*
 
 ==================================
@@ -507,3 +537,74 @@ void initializeActors() {
   lasers[ENEMY_LASER]->dir = 0;
   lasers[ENEMY_LASER]->sprite = laserSprite;
 }*/
+
+//////////////////////////////////////// HEREREREREERE
+/*
+#include <stdio.h>
+#include <math.h>
+#include <stdint.h>
+const int ARROW_BITMAP_SIZE = 15;
+const int ARROW_BITMAP_MID = (ARROW_BITMAP_SIZE + 1) / 2;
+const double PI = 3.14;
+
+const int L = 7;
+const double theta = 254;
+
+double deg2rad(double angle) {
+  return (angle/180)*PI;
+}
+
+
+int ConvertToDec(int* bits, int size)
+{
+  int result = 0;
+
+    for (int i = 0; i < size; i++) {
+
+        result |= bits[i];
+        if(i != size-1)
+            result <<= 1;
+    }
+
+    return result;
+
+}
+
+
+
+
+int main() {
+  int arrow[ARROW_BITMAP_SIZE][ARROW_BITMAP_SIZE] = {0};
+  arrow[ARROW_BITMAP_MID-1][ARROW_BITMAP_MID-1] = 1;
+  for (int i = L-1; i >= 0; i--) {
+    int x = round(i*cos(deg2rad(theta)));
+    int y = round(i*sin(deg2rad(theta)));
+    
+    arrow[x+ARROW_BITMAP_MID-1][y+ARROW_BITMAP_MID-1] = 1;
+  }
+  // Print out 2D ARRAY
+  for (int i = 0; i < ARROW_BITMAP_SIZE; i++) {
+    for (int j = 0; j < ARROW_BITMAP_SIZE; j++) {
+      printf("%d ", arrow[i][j]);
+    }
+    printf("\n");
+  }
+
+  char arrowBitMap[15] = {};
+  for (int row = 0; row < ARROW_BITMAP_SIZE; row++) {
+    int result = ConvertToDec(arrow[row], ARROW_BITMAP_SIZE);
+    char hex[15];
+    sprintf(hex, "0x%02X", result);
+    arrowBitMap[row] = hex;
+    printf("%s\n", hex);
+  }
+  //int result = ConvertToDec(arrow[6], ARROW_BITMAP_SIZE);
+  //printf("%d\n", result);
+  //char arrowBitMap[20] = {};
+  
+  //sprintf(hex, "0x%02X", result);
+  
+  
+  return 0;
+}
+*/
