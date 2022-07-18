@@ -96,7 +96,7 @@ void setupGame(void) {
   
 }*/
 
-void createArrowBitMap(Ball ball) {
+void createArrowBitMap(Actor *ball, char *arrowBitMap) {
   double mappedDirection = convertAngle(playerDirection);
 
   // Initialize Empty Bitmap with 1 at center
@@ -122,6 +122,14 @@ void createArrowBitMap(Ball ball) {
   
   arrowBitMap = tempArrowBitMap;
 
+}
+
+void drawArrow(void) {
+  osMutexAcquire(arrowBitMapMutex, osWaitForever);
+  osMutexAcquire(ballMutex, osWaitForever);
+  createArrowBitMap(golfBall, arrowBitMap);
+  osMutexRelease(ballMutex);
+  osMutexRelease(arrowBitMapMutex);
 }
 
 void drawPixelsAt(int x, int y, int limit) {
