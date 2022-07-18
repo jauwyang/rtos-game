@@ -50,10 +50,14 @@ const uint32_t LCD_WIDTH = 240;  // x-axis
 // Sizes and bitmaps
 const uint32_t BALL_SIZE = 5;
 const uint32_t HOLE_SIZE = 5;
-const uint32_t DIRECTION_ARROW_SIZE = 10;
+const uint32_t DIRECTION_ARROW_SIZE = 7;
 
 char ball_bitmap[] = {0x38, 0x38, 0x38};
 char hole_bitmap[] = {0x38, 0x38, 0x38};
+
+char arrowBitMap[ARROW_BITMAP_SIZE] = {};
+extern osMutexId_t arrowBitMapMutex;
+
 
 /*char hole_bitmap[] = {};
 char arrow_bitmap[] = {};*/
@@ -68,7 +72,10 @@ char arrow_bitmap[] = {};*/
 // (1) Golf Score
 // (2) Golf Actor State
 // (3) Hole State
+const uint32_t ARROW_BITMAP_SIZE = 15;
+const uint32_t ARROW_BITMAP_MID = (ARROW_BITMAP_SIZE + 1) / 2;
 
+/*
 void setupGame(void) {
   golfScore = 0;
   
@@ -85,16 +92,44 @@ void setupGame(void) {
     hole->pos.x = rand() % ((LCD_WIDTH - HOLE_SIZE) - HOLE_SIZE + 1) + HOLE_SIZE;
     hole->pos.y = rand() % ((LCD_WIDTH - HOLE_SIZE) - HOLE_SIZE + 1) + HOLE_SIZE;
   } while (hole->pos.x == golfBall->pos.x && hole->pos.y == golfBall->pos.y);
+
+  
+}*/
+
+void createArrowBitMap(Actor *ball, char *arrowBitMap) {
+  double mappedDirection = convertAngle(playerDirection);
+
+  // Initialize Empty Bitmap with 1 at center
+  uint32_t arrow[ARROW_BITMAP_SIZE][ARROW_BITMAP_SIZE] = {0};
+  arrow[ARROW_BITMAP_MID-1][ARROW_BITMAP_MID-1] = 1;  // make center of bit map (where the ball would be) 1
+  
+  // Draw Arrow in the 2D Bitmap starting at center of map
+  for (uint32_t i = 1; i < DIRECTION_ARROW_SIZE + 1; i++) {  
+    uint32_t x = round(i*cos(mappedDirection));
+    uint32_t y = round(i*sin(mappedDirection));
+    arrow[x + ARROW_BITMAP_MID - 1][y+ ARROW_BITMAP_MID - 1] = 1;
+    //GLCD_PutPixel(x + ball->pos.x, y + ball->pos.y);
+  }
+
+  char tempArrowBitMap[ARROW_BITMAP_SIZE] = {};
+  // Convert 2D Binary Bitmap into Hexidecimal bitmap
+  for (uint32_t rowOf16Bits = 0; rowOf16Bits < ARROW_BITMAP_SIZE; rowOf16Bits++) {
+    uint32_t decimalValueOfRow = convertBinaryArrayToDecimal(arrowBitMap[rowOf16Bits], ARROW_BITMAP_SIZE);
+    char hexRow[ARROW_BITMAP_SIZE];
+    sprintf(hexRow, "0x%02X", decimalValueOfRow);
+    tempArrowBitMap[rowOf16Bits] = hexRow;
+  }
+  
+  arrowBitMap = tempArrowBitMap;
+
 }
 
-void drawDirectionArrow(Actor ball) {
-    double mappedDirection = convertAngle(playerDirection);
-    for (uint32_t i = 1; i < DIRECTION_ARROW_SIZE + 1; i++) {  
-        uint32_t x = i*cos(mappedDirection);
-        uint32_t y = i*sin(mappedDirection);
-        
-        GLCD_PutPixel(x + golfBall->pos.x, y + golfBall->pos.y);
-    }
+void drawArrow(void) {
+  osMutexAcquire(arrowBitMapMutex, osWaitForever);
+  osMutexAcquire(ballMutex, osWaitForever);
+  createArrowBitMap(golfBall, arrowBitMap);
+  osMutexRelease(ballMutex);
+  osMutexRelease(arrowBitMapMutex);
 }
 
 void drawPixelsAt(int x, int y, int limit) {
@@ -127,19 +162,24 @@ void drawSpriteAt(int x, int y, char *bitmap, int bitmap_size) {
 }
 
 void drawBall(void) {
-	GLCD_SetTextColor(White);
+	// Set the colour to the colour of the default background (green)
+	GLCD_SetTextColor(Green);
+	
 	osMutexAcquire(ballMutex, osWaitForever);
-	drawSpriteAt(golfBall->pos.x, golfBall->pos.y, ball_bitmap, 3);
-	osMutexRelease(ballMutex);
-}
-
-void drawHole(void) {
+	// Draw a "sprite" the size of the ball so that its previous position is covered up
+	drawSpriteAt(golfBall->pos.x, golfBall->y_velocity, golfBall->bitmap, sizeof(golfBall->bitmap)/sizeof(golfBall->bitmap[0]));
+	
+	// Update the position of the ball
+	
+	// Set the colour to the colour of the sprites (black)
 	GLCD_SetTextColor(Black);
-	drawSpriteAt(hole->pos.x, hole->pos.y, hole_bitmap, 3);
+	
+	// Draw the ball -- this time its fill colour will be black
+	drawSpriteAt(golfBall->pos.x, golfBall->y_velocity, golfBall->bitmap, sizeof(golfBall->bitmap)/sizeof(golfBall->bitmap[0]));
 }
 
 void draw(void *args) {
-	/*for (int i = 0; i < 100; ++i) {
+	for (int i = 0; i < 100; ++i) {
 		for (int j = 0; j < 100; ++j) {
 				GLCD_SetTextColor(Green);
 				drawSpriteAt(j, i, ball_bitmap, 3);
@@ -147,17 +187,7 @@ void draw(void *args) {
 				GLCD_SetTextColor(Black);
 				drawSpriteAt(j + 1, i + 1, ball_bitmap, 3);
 		}
-	}*/
-	while (1) {
-		for (int i = 0; i < 100; ++i) {
-			GLCD_SetTextColor(Green);
-			drawSpriteAt(0, i, ball_bitmap, 3);
-		
-			GLCD_SetTextColor(White);
-			drawSpriteAt(0, i + 1, ball_bitmap, 3);
-		}		
 	}
-
 }
 
 // ================================
@@ -347,7 +377,7 @@ void readDirectionInput(void *args) {
         } 
     }
 }
-
+/*
 void hitBall(void *args) {
     // -->> PUSH BUTTON << --
     // MUTEX: powerMutex, ballMutex, playerDirectionMutex
@@ -355,53 +385,46 @@ void hitBall(void *args) {
     
     while (1) {
         if (!(LPC_GPIO2->FIOPIN & (1<<10))) {
+            osMutexAcquire(powerMutex, osWaitForever);
+            osMutexAcquire(ballMutex, osWaitForever);
+            osMutexAcquire(playerDirectionMutex, osWaitForever);
 
             launchBall();
+					
+            osMutexRelease(playerDirectionMutex);
+            osMutexRelease(ballMutex);
+            osMutexRelease(powerMutex);
         }
     }
-}
+}*/
 
 // ===========================================
 // ============== GAME  PHYSICS ==============
 // ===========================================
-
-void launchBall(void) { // might need to change this <<<<< HERE
+/*
+void launchBall(void *args) { // might need to change this <<<<< HERE
     // Calculate x and y velocities
     // -> Convert player angle for map coordinate system 
-		osMutexAcquire(playerDirectionMutex, osWaitForever);
     double initialAngle = convertAngle(playerDirection);
-		osMutexRelease(playerDirectionMutex);
 
-		osMutexAcquire(powerMutex, osWaitForever);
     double initXVelocity = powerLevel * cos(initialAngle);
     double initYVelocity = powerLevel * sin(initialAngle);
-		osMutexRelease(powerMutex);
 
     double currXVelocity = initXVelocity;
     double currYVelocity = initYVelocity;
 
-		osMutexAcquire(ballMutex, osWaitForever);
     double xPosition = golfBall->pos.x;
     double yPosition = golfBall->pos.y;
 
-    //while (fabs(currXVelocity) > ZERO_TOLERANCE || fabs(currYVelocity) > ZERO_TOLERANCE) { // while there the ball still has velocity
-        // Calculate new Position Values and draw ball incrementally
-				GLCD_SetTextColor(Green);
-				drawSpriteAt(golfBall->pos.x, golfBall->pos.y, ball_bitmap, sizeof(ball_bitmap)/sizeof(ball_bitmap[0]));
-			  
-			  xPosition = xPosition + currXVelocity*TIME + 0.5*FRICTION_ACCEL*(pow(TIME, 2));
+    while (fabs(currXVelocity) > ZERO_TOLERANCE || fabs(currYVelocity) > ZERO_TOLERANCE) { // while there the ball still has velocity
+        // Calculate new Position Values
+        xPosition = xPosition + currXVelocity*TIME + 0.5*FRICTION_ACCEL*(pow(TIME, 2));
         yPosition = yPosition + currYVelocity*TIME + 0.5*FRICTION_ACCEL*(pow(TIME, 2));
-				
-				golfBall->pos.x = xPosition;
-				golfBall->pos.y = yPosition;
-			
-				GLCD_SetTextColor(Black);
-			  drawSpriteAt(golfBall->pos.x, golfBall->pos.y, ball_bitmap, sizeof(ball_bitmap)/sizeof(ball_bitmap[0]));
 
-        /*// Calculate in Hole
+        // Calculate in Hole
         if (inHole()) {
             break; // << WHAT TO DO <<< HERE
-        }*/
+        }
 
         // Change direction if wall collision
         if ((xPosition > LCD_WIDTH) || (xPosition < 0)) {
@@ -415,14 +438,12 @@ void launchBall(void) { // might need to change this <<<<< HERE
         currXVelocity = currXVelocity + FRICTION_ACCEL*TIME;
         currYVelocity = currYVelocity + FRICTION_ACCEL*TIME;
 
-    //}
+    }
 
-		// BALL STOPS
-    // Update position and draw ball of ball globally for next hit
+    // Update position of ball globally for next hit
     golfBall->pos.x = xPosition;
     golfBall->pos.y = yPosition;
-		osMutexRelease(ballMutex);
-}
+}*/
 
 
 bool inHole(Actor *ball, Actor *hole, int size_ball, int size_hole) {
@@ -440,7 +461,6 @@ bool inHole(Actor *ball, Actor *hole, int size_ball, int size_hole) {
 	int x_bot_hole = hole->pos.x + SPRITE_COLS*SPRITE_SCALE;
 	int y_bot_hole = hole->pos.y + size_hole*SPRITE_SCALE;
 	
-	
 }
 
 // ===========================================
@@ -455,6 +475,19 @@ bool inHole(Actor *ball, Actor *hole, int size_ball, int size_hole) {
 
 double convertAngle(uint32_t rawAngle) {
     return (rawAngle - MAP_CONVERSION_ANGLE) * M_PI / 180 ;
+}
+
+uint32_t convertBinaryArrayToDecimal(uint32_t* bits, uint32_t arraySize) {
+  int result = 0;
+
+  for (int i = 0; i < arraySize; i++) {
+    result |= bits[i];
+    if (i != arrraySize - 1) {
+      result <<= 1;
+    }
+  }
+
+  return result;
 }
 
 /*
@@ -576,3 +609,74 @@ void initializeActors() {
   lasers[ENEMY_LASER]->dir = 0;
   lasers[ENEMY_LASER]->sprite = laserSprite;
 }*/
+
+//////////////////////////////////////// HEREREREREERE
+/*
+#include <stdio.h>
+#include <math.h>
+#include <stdint.h>
+const int ARROW_BITMAP_SIZE = 15;
+const int ARROW_BITMAP_MID = (ARROW_BITMAP_SIZE + 1) / 2;
+const double PI = 3.14;
+
+const int L = 7;
+const double theta = 254;
+
+double deg2rad(double angle) {
+  return (angle/180)*PI;
+}
+
+
+int ConvertToDec(int* bits, int size)
+{
+  int result = 0;
+
+    for (int i = 0; i < size; i++) {
+
+        result |= bits[i];
+        if(i != size-1)
+            result <<= 1;
+    }
+
+    return result;
+
+}
+
+
+
+
+int main() {
+  int arrow[ARROW_BITMAP_SIZE][ARROW_BITMAP_SIZE] = {0};
+  arrow[ARROW_BITMAP_MID-1][ARROW_BITMAP_MID-1] = 1;
+  for (int i = L-1; i >= 0; i--) {
+    int x = round(i*cos(deg2rad(theta)));
+    int y = round(i*sin(deg2rad(theta)));
+    
+    arrow[x+ARROW_BITMAP_MID-1][y+ARROW_BITMAP_MID-1] = 1;
+  }
+  // Print out 2D ARRAY
+  for (int i = 0; i < ARROW_BITMAP_SIZE; i++) {
+    for (int j = 0; j < ARROW_BITMAP_SIZE; j++) {
+      printf("%d ", arrow[i][j]);
+    }
+    printf("\n");
+  }
+
+  char arrowBitMap[15] = {};
+  for (int row = 0; row < ARROW_BITMAP_SIZE; row++) {
+    int result = ConvertToDec(arrow[row], ARROW_BITMAP_SIZE);
+    char hex[15];
+    sprintf(hex, "0x%02X", result);
+    arrowBitMap[row] = hex;
+    printf("%s\n", hex);
+  }
+  //int result = ConvertToDec(arrow[6], ARROW_BITMAP_SIZE);
+  //printf("%d\n", result);
+  //char arrowBitMap[20] = {};
+  
+  //sprintf(hex, "0x%02X", result);
+  
+  
+  return 0;
+}
+*/
