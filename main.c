@@ -5,6 +5,8 @@ osMutexId_t playerDirectionMutex;
 osMutexId_t ballMutex;
 osMutexId_t scoreMutex;
 
+osSemaphoreId_t canDrawSem;
+
 int main()
 {
 	osKernelInitialize();
@@ -32,6 +34,9 @@ int main()
 	// Select pin 2, set CLK frequency, enable the ADC
 	LPC_ADC->ADCR = (1<<2) | (4<<8) | (1<<21);
 
+
+	// Init the semaphore
+	canDrawSem = osSemaphoreNew(1, 0 , NULL);
 	
 	// Create the mutexes
 	powerMutex = osMutexNew(NULL);
@@ -52,6 +57,7 @@ int main()
 	//osThreadNew(drawRando, NULL, NULL);
 	//osThreadNew(draw, NULL, NULL);
 	osThreadNew(hitBall, NULL, NULL); 
+	osThreadNew(drawBall, NULL, NULL);
 	
 	osKernelStart();
 
