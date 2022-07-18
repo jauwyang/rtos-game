@@ -14,12 +14,26 @@ typedef struct { // Struct to store the (x, y) coordinates of in-game sprites
   uint32_t y;
 } Pos;
 
-typedef struct {  // The ball the player interacts with in-game is a point mass
-  float x_velocity;    // Get speed and direction information from these fields
-  float y_velocity;    // Velocity information is only used for the ball and not the hole
-  Pos pos;
-  char *bitmap;
-} Actor;
+
+typedef struct {
+	Pos pos;
+	char *bitmap;
+	
+	double xVelocity;
+	double yVelocity;
+	
+	double direction;
+	uint32_t power;
+	
+} Ball;
+
+
+typedef struct {
+	Pos pos;
+	char *bitmap;
+	
+} Hole;
+
 
 void initLEDs(void);
 void updateLEDs(void *args);
@@ -37,10 +51,10 @@ void initActors(void);
 void draw(void *args);
 void drawPixelsAt(int x, int y, int limit);
 void drawSpriteAt(int x, int y, char *bitmap, int bitmap_size);
-void drawBall(void);
+void drawBall(void *args);
 void drawHole(void);
 
 void animate(void *args);
-bool inHole(Actor *ball, Actor *hole, int ball_size, int hole_size);
+bool inHole(Ball *ball, Hole *hole, int ball_size, int hole_size);
 
 #endif
