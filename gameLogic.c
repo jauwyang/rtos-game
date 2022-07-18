@@ -3,6 +3,10 @@
 #include <stdbool.h>
 #include <math.h>
 
+#ifndef M_PI
+#    define M_PI 3.14159265358979323846
+#endif
+
 
 // Power Mutex and Data
 extern osMutexId_t powerMutex;
@@ -17,24 +21,14 @@ uint32_t playerDirection = 0;  // direction stored in degrees
 uint32_t prevPlayerDirection = 0;  // allows previous value to be read without having to access mutex-protected data of playerDirection
 const uint32_t MAP_CONVERSION_ANGLE = 80; // Note: 90 degrees means straight up.
 
-// Position Struct, Ball Mutex and Data
+// Position Struct, Actor Mutex and Data
 extern osMutexId_t ballMutex;
-typedef struct { // Struct to store the (x, y) coordinates of in-game sprites
-  uint32_t x;
-  uint32_t y;
-} Pos;
 
-typedef struct {  // The ball the player interacts with in-game is a point mass
-  float x_velocity;    // Get speed and direction information from these fields
-  float y_velocity;    // Velocity information is only used for the ball and not the hole
-  Pos pos;
-  char *bitmap;
-} Actor;
 
 Actor *golfBall;
 Actor *hole;
 
-// Ball Physics Values
+// Actor Physics Values
 const int32_t FRICTION_ACCEL = -5;
 const double ZERO_TOLERANCE = 0.001;
 const uint32_t TIME = 1;
@@ -58,9 +52,16 @@ const uint32_t BALL_SIZE = 5;
 const uint32_t HOLE_SIZE = 5;
 const uint32_t DIRECTION_ARROW_SIZE = 7;
 
-char ball_bitmap[] = {};
-char hole_bitmap[] = {};
-char arrow_bitmap[] = {};
+char ball_bitmap[] = {0x38, 0x38, 0x38};
+char hole_bitmap[] = {0x38, 0x38, 0x38};
+
+char arrowBitMap[ARROW_BITMAP_SIZE] = {};
+extern osMutexId_t arrowBitMapMutex;
+
+
+/*char hole_bitmap[] = {};
+char arrow_bitmap[] = {};*/
+
 
 
 // ================================
@@ -69,31 +70,31 @@ char arrow_bitmap[] = {};
 
 // Initializes in-game elements
 // (1) Golf Score
-// (2) Golf Ball State
+// (2) Golf Actor State
 // (3) Hole State
 const uint32_t ARROW_BITMAP_SIZE = 15;
 const uint32_t ARROW_BITMAP_MID = (ARROW_BITMAP_SIZE + 1) / 2;
 
-
+/*
 void setupGame(void) {
   golfScore = 0;
   
   golfBall = malloc(sizeof(Actor));
   golfBall->pos.x = rand() % ((LCD_WIDTH - BALL_SIZE) - BALL_SIZE + 1) + BALL_SIZE;
   golfBall->pos.y = rand() % ((LCD_HEIGHT - BALL_SIZE) - BALL_SIZE + 1) + BALL_SIZE;
-  golfBall->sprite = ball_bitmap;
+  golfBall->bitmap = ball_bitmap;
 
   hole = malloc(sizeof(Actor));
-  hole->sprite = hole_bitmap;
+  hole->bitmap = hole_bitmap;
 
   // Hole location cannot be same as ball location when spawned
   do {
-    hole.x = rand() % ((LCD_WIDTH - HOLE_SIZE) - HOLE_SIZE + 1) + HOLE_SIZE;
-    hole.y = rand() % ((LCD_WIDTH - HOLE_SIZE) - HOLE_SIZE + 1) + HOLE_SIZE;
-  } while (hole.x == golfBall.pos.x && hole.y == golfBall.pos.y);
+    hole->pos.x = rand() % ((LCD_WIDTH - HOLE_SIZE) - HOLE_SIZE + 1) + HOLE_SIZE;
+    hole->pos.y = rand() % ((LCD_WIDTH - HOLE_SIZE) - HOLE_SIZE + 1) + HOLE_SIZE;
+  } while (hole->pos.x == golfBall->pos.x && hole->pos.y == golfBall->pos.y);
 
   
-}
+}*/
 
 void createArrowBitMap(Ball ball) {
   double mappedDirection = convertAngle(playerDirection);
@@ -102,29 +103,92 @@ void createArrowBitMap(Ball ball) {
   uint32_t arrow[ARROW_BITMAP_SIZE][ARROW_BITMAP_SIZE] = {0};
   arrow[ARROW_BITMAP_MID-1][ARROW_BITMAP_MID-1] = 1;  // make center of bit map (where the ball would be) 1
   
-  // Draw Arrow in 2D Bitmap starting at center of map
+  // Draw Arrow in the 2D Bitmap starting at center of map
   for (uint32_t i = 1; i < DIRECTION_ARROW_SIZE + 1; i++) {  
-      uint32_t x = round(i*cos(mappedDirection));
-      uint32_t y = round(i*sin(mappedDirection));
-      arrow[x + ARROW_BITMAP_MID - 1][y+ ARROW_BITMAP_MID - 1] = 1;
-      //GLCD_PutPixel(x + ball->pos.x, y + ball->pos.y);
+    uint32_t x = round(i*cos(mappedDirection));
+    uint32_t y = round(i*sin(mappedDirection));
+    arrow[x + ARROW_BITMAP_MID - 1][y+ ARROW_BITMAP_MID - 1] = 1;
+    //GLCD_PutPixel(x + ball->pos.x, y + ball->pos.y);
   }
 
-  char arrowBitMap
+  char tempArrowBitMap[ARROW_BITMAP_SIZE] = {};
+  // Convert 2D Binary Bitmap into Hexidecimal bitmap
+  for (uint32_t rowOf16Bits = 0; rowOf16Bits < ARROW_BITMAP_SIZE; rowOf16Bits++) {
+    uint32_t decimalValueOfRow = convertBinaryArrayToDecimal(arrowBitMap[rowOf16Bits], ARROW_BITMAP_SIZE);
+    char hexRow[ARROW_BITMAP_SIZE];
+    sprintf(hexRow, "0x%02X", decimalValueOfRow);
+    tempArrowBitMap[rowOf16Bits] = hexRow;
+  }
+  
+  arrowBitMap = tempArrowBitMap;
 
+}
 
+void drawPixelsAt(int x, int y, int limit) {
+		for (int i = 0; i < limit; ++i) {
+			for (int j = 0; j < limit; ++j) {
+				GLCD_PutPixel(x + i, y + j);
+			}
+		}
+}
 
+void drawSpriteAt(int x, int y, char *bitmap, int bitmap_size) {
+	// Print the sprite left to right, with x being the vertical component, y the horizontal
+	// Given the orientation of the screen, joystick, and button
+	
+	int spriteIndex = bitmap_size - 1;
+	int spriteShift = 0;
+	
+	for(int i =(bitmap_size - 1) * SPRITE_SCALE; i >= 0; i -= SPRITE_SCALE) {
+		spriteShift = 0;
+		for(int j = 0; j < SPRITE_COLS*SPRITE_SCALE; j+=SPRITE_SCALE) {
+			if((bitmap[spriteIndex] >> spriteShift)&1) {
+				drawPixelsAt(x + ((bitmap_size - 1) * SPRITE_SCALE - i),y + j, SPRITE_SCALE);
+			}
+			
+			spriteShift++; // Bitmap column coordinate
+		}
+		
+		spriteIndex--; // Bitmap row coordinate
+	}
+}
 
+void drawBall(void) {
+	// Set the colour to the colour of the default background (green)
+	GLCD_SetTextColor(Green);
+	
+	osMutexAcquire(ballMutex, osWaitForever);
+	// Draw a "sprite" the size of the ball so that its previous position is covered up
+	drawSpriteAt(golfBall->pos.x, golfBall->y_velocity, golfBall->bitmap, sizeof(golfBall->bitmap)/sizeof(golfBall->bitmap[0]));
+	
+	// Update the position of the ball
+	
+	// Set the colour to the colour of the sprites (black)
+	GLCD_SetTextColor(Black);
+	
+	// Draw the ball -- this time its fill colour will be black
+	drawSpriteAt(golfBall->pos.x, golfBall->y_velocity, golfBall->bitmap, sizeof(golfBall->bitmap)/sizeof(golfBall->bitmap[0]));
+}
 
+void draw(void *args) {
+	for (int i = 0; i < 100; ++i) {
+		for (int j = 0; j < 100; ++j) {
+				GLCD_SetTextColor(Green);
+				drawSpriteAt(j, i, ball_bitmap, 3);
+			
+				GLCD_SetTextColor(Black);
+				drawSpriteAt(j + 1, i + 1, ball_bitmap, 3);
+		}
+	}
 }
 
 // ================================
 // ===== DRAW HELPER FUNCTIONS ====
 // ================================
 
-void drawPixelsAt(int x, int y) {
-  for (int i = 0; i < )  IAM DONE POOPING OK 
-}
+
+
+
 
 // =============================
 // ======= Serial Output =======
@@ -163,9 +227,13 @@ void updateLEDs(void *args) {
   // PROTECTED DATA: powerLevel
 
   while (1) {
+		  /*LPC_GPIO1->FIOSET |= (1 << 28);
+			LPC_GPIO1->FIOSET |= (1 << 29);
+		  LPC_GPIO1->FIOSET |= (1 << 31);
+		  LPC_GPIO2->FIOSET |= (1 << 2);*/
 
       // Initialize array of ints to store
-      bool ledsOn[MAX_POWER];
+      bool ledsOn[MAX_POWER] = {false, false, false, false, false, false, false, false};
       
       osMutexAcquire(powerMutex, osWaitForever);
       for (int i =0; i < powerLevel; ++i) {
@@ -227,7 +295,7 @@ void updateLEDs(void *args) {
       } else {
         LPC_GPIO2->FIOCLR |= (1 << 6);
       }
-  }
+	  }
 }
 
 // ===========================================
@@ -245,8 +313,8 @@ void readPowerInput(void *args) {
   unsigned int lastStateP24;
   unsigned int currStateP24;
 
-  while (1) {
-      // Read both P26 and P24 
+  while (1) {		
+      // Read both P26 and P24		
       currStateP26 = !(LPC_GPIO1->FIOPIN & (1 << 26));
       currStateP24 = !(LPC_GPIO1->FIOPIN & (1 << 24));
 
@@ -255,8 +323,8 @@ void readPowerInput(void *args) {
       if (currStateP26 && currStateP26 != lastStateP26) {
         osMutexAcquire(powerMutex, osWaitForever);
         if (powerLevel > MIN_POWER) {
+					osDelay(150);		// Delay changes power level so it is slow enough for user control
           powerLevel--;
-          printf("Power Level: %d\n", powerLevel);
         }
         osMutexRelease(powerMutex);
       }
@@ -265,8 +333,8 @@ void readPowerInput(void *args) {
       else if (currStateP24 && currStateP24 != lastStateP24) {
         osMutexAcquire(powerMutex, osWaitForever);
         if (powerLevel < MAX_POWER) {
+					osDelay(150);
           powerLevel++;
-          printf("Power Level: %d\n", powerLevel);
         }
         osMutexRelease(powerMutex);
       }
@@ -297,35 +365,35 @@ void readDirectionInput(void *args) {
             playerDirection = currAngle;
             prevPlayerDirection = playerDirection;
             osMutexRelease(playerDirectionMutex);
-            //printf("%d\n", playerDirection);
+            printf("%d\n", playerDirection - MAP_CONVERSION_ANGLE);
         } 
     }
 }
-
+/*
 void hitBall(void *args) {
     // -->> PUSH BUTTON << --
     // MUTEX: powerMutex, ballMutex, playerDirectionMutex
     // PROTECTED DATA: powerLevel, ball, playerDirection
     
     while (1) {
-        if (LPC_GPIO2->FIOPIN & (1<<10)) {
+        if (!(LPC_GPIO2->FIOPIN & (1<<10))) {
             osMutexAcquire(powerMutex, osWaitForever);
             osMutexAcquire(ballMutex, osWaitForever);
             osMutexAcquire(playerDirectionMutex, osWaitForever);
 
             launchBall();
-
+					
             osMutexRelease(playerDirectionMutex);
             osMutexRelease(ballMutex);
             osMutexRelease(powerMutex);
         }
     }
-}
+}*/
 
 // ===========================================
 // ============== GAME  PHYSICS ==============
 // ===========================================
-
+/*
 void launchBall(void *args) { // might need to change this <<<<< HERE
     // Calculate x and y velocities
     // -> Convert player angle for map coordinate system 
@@ -367,11 +435,24 @@ void launchBall(void *args) { // might need to change this <<<<< HERE
     // Update position of ball globally for next hit
     golfBall->pos.x = xPosition;
     golfBall->pos.y = yPosition;
-}
+}*/
 
-bool inHole(Ball ball) {
 
-    // insert hole detection here
+bool inHole(Actor *ball, Actor *hole, int size_ball, int size_hole) {
+	// Extract coordinates of the ball
+	int x_top_ball = ball->pos.x;
+	int y_top_ball = ball->pos.y;
+	
+	int x_bot_ball = ball->pos.x + SPRITE_COLS*SPRITE_SCALE;
+	int y_bot_ball = ball->pos.y + size_ball*SPRITE_SCALE;
+
+	// Extract coordinates of the hole
+	int x_top_hole = hole->pos.x;
+	int y_top_hole = hole->pos.y;
+	
+	int x_bot_hole = hole->pos.x + SPRITE_COLS*SPRITE_SCALE;
+	int y_bot_hole = hole->pos.y + size_hole*SPRITE_SCALE;
+	
 }
 
 // ===========================================
@@ -385,7 +466,7 @@ bool inHole(Ball ball) {
 // ===========================================
 
 double convertAngle(uint32_t rawAngle) {
-    return (rawAngle - MAP_CONVERSION_ANGLE) * 2*M_PI / 360;
+    return (rawAngle - MAP_CONVERSION_ANGLE) * M_PI / 180 ;
 }
 
 uint32_t convertBinaryArrayToDecimal(uint32_t* bits, uint32_t arraySize) {
@@ -402,7 +483,6 @@ uint32_t convertBinaryArrayToDecimal(uint32_t* bits, uint32_t arraySize) {
 }
 
 /*
-
 ==================================
 */
 
@@ -419,12 +499,10 @@ extern actor *player;
 extern actor *enemy;
 extern actor *lasers[2];
 extern osThreadId_t animateID;
-
 // sprites for the enemy, player, and laser bolt
 char sprite[] = {0x81, 0xA5, 0xFF, 0xE7, 0x7E, 0x24};
 char playerSprite[] = {0x00, 0x18, 0x3C, 0xFF, 0xFF, 0xFF};
 char laserSprite[] = {0x18, 0x18, 0x18, 0x18, 0x18, 0x18};
-
 void readPlayerInput(void *args) {
   while (1) {
     // check the joystick for movement
@@ -435,7 +513,6 @@ void readPlayerInput(void *args) {
       player->dir = 1;
     } else
       player->dir = 0;
-
     // check the button for laser shooting
     if (!(LPC_GPIO2->FIOPIN & (1 << 10))) {
       if (lasers[PLAYER_LASER]->dir == 0) {
@@ -450,7 +527,6 @@ void readPlayerInput(void *args) {
     osThreadYield();
   }
 }
-
 void enemyShoot(actor *enemy) {
   // put it in the middle
   lasers[ENEMY_LASER]->horizontalPosition =
@@ -459,30 +535,23 @@ void enemyShoot(actor *enemy) {
       enemy->verticalPosition - (SPRITE_COLS - 1) * SPRITE_SCALE;
   lasers[ENEMY_LASER]->dir = -1;
 }
-
 // definitely screw this up with both being task 1 or something
 void animate(void *args) {
   while (1) {
     printEnemy(enemy);
-
     // see if there is shooting to do
     if (rand() > ENEMY_SHOT_CHANCE && lasers[ENEMY_LASER]->dir == 0)
       enemyShoot(enemy);
-
     if (player->dir != 0) // we don't want to print more than we need. The print
                           // logic is a bit more complex than for enemies
       printPlayer(player);
-
     if (lasers[PLAYER_LASER]->dir != 0)
       printLaser(lasers[PLAYER_LASER]);
-
     if (lasers[1]->dir != 0)
       printLaser(lasers[ENEMY_LASER]);
-
     osDelay(100U);
   }
 }
-
 // thread to check for end-game conditions
 void checkEndGame(void *args) {
   while (1) {
@@ -496,11 +565,9 @@ void checkEndGame(void *args) {
     else if (checkCollision(player, lasers[ENEMY_LASER], 1) &&
              lasers[ENEMY_LASER]->dir != 0)
       osThreadTerminate(animateID);
-
     osThreadYield();
   }
 }
-
 void initializeActors() {
   /*
           Generally this should be handled by a separate function. However, it
@@ -512,15 +579,13 @@ void initializeActors() {
   enemy->verticalPosition = 300;
   enemy->speed = ENEMY_SPEED;
   enemy->dir = 1;
-  enemy->sprite = sprite;
-
+  enemy->bitmap = sprite;
   player = malloc(sizeof(actor));
   player->horizontalPosition = 10; // start in a bottom corner
   player->verticalPosition = 20;
   player->speed = PLAYER_SPEED;
   player->dir = 0; // set to zero until the player moves
-  player->sprite = playerSprite;
-
+  player->bitmap = playerSprite;
   // init the two lasers, but set their dir to zero so they don't appear or
   // affect anything
   lasers[PLAYER_LASER] = malloc(sizeof(actor));
@@ -529,7 +594,6 @@ void initializeActors() {
   lasers[PLAYER_LASER]->speed = LASER_SPEED;
   lasers[PLAYER_LASER]->dir = 0;
   lasers[PLAYER_LASER]->sprite = laserSprite;
-
   lasers[ENEMY_LASER] = malloc(sizeof(actor));
   lasers[ENEMY_LASER]->horizontalPosition = 0;
   lasers[ENEMY_LASER]->verticalPosition = 0;

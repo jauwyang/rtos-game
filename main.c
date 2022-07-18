@@ -13,12 +13,13 @@ int main()
 	
 	// Configure the LEDs as outputs
 	initLEDs();
+	
 
 	// Initialize the GLCD
 
 	GLCD_Init();
-	GLCD_Clear(White);
-	GLCD_SetTextColor(Green);
+	GLCD_Clear(Green);
+	GLCD_SetTextColor(Black);
 	
 	// Setting up and enabling the ADC
 	LPC_PINCON->PINSEL1 &= ~(1<<18);
@@ -42,6 +43,9 @@ int main()
 	osThreadNew(readPowerInput, NULL, NULL);
 	osThreadNew(updateLEDs, NULL, NULL);
 	osThreadNew(readDirectionInput, NULL, NULL);
+	//osThreadNew(hitBall, NULL, NULL);
+	//osThreadNew(drawRando, NULL, NULL);
+	//osThreadNew(draw, NULL, NULL);
 	
 	osKernelStart();
 
@@ -65,7 +69,6 @@ actor* lasers[2]; //an array of actor pointers!
 {
 	//set up the main actors in the game
 	initializeActors();
-
 	//call this function to ensure that all of the internal settings of the LPC are correct
 	SystemInit();*/
 	
@@ -92,7 +95,6 @@ actor* lasers[2]; //an array of actor pointers!
 		we need to print it before the game starts or we won't see it
 	*/
 	/*printPlayer(player);
-
 	//initialize the kernel so that we can create threads
 	osKernelInitialize();
 	
@@ -101,10 +103,8 @@ actor* lasers[2]; //an array of actor pointers!
 	
 	//create a new thread for reading player input
 	osThreadNew(readPlayerInput,NULL, NULL);
-
 	//create a new thread that checks for endgame
 	osThreadNew(checkEndGame,NULL,NULL);
-
 	//launch the kernel, which simultaneously starts all threads we have created
 	osKernelStart();
 	
