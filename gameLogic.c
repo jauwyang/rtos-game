@@ -1,112 +1,131 @@
 #include "gameLogic.h"
 
-osMutexId_t powerMutex;
+#include <stdbool.h>
+#include <math.h>
 
+
+// Power Mutex and Data
+extern osMutexId_t powerMutex;
 const uint32_t MAX_POWER = 8;
 const uint32_t MIN_POWER = 1;
-
 uint32_t powerLevel = 1;
 
-osMutexId_t playerDirectionMutex;
-const uint32_t MAX_ANGLE = 340;
+// Player Direction Mutex and Data
+// Note: the playerDirection is kept in degrees and is not converted in accordance to the map. It must be updated immediately before using.
+extern osMutexId_t playerDirectionMutex;
 uint32_t playerDirection = 0;  // direction stored in degrees
-uint32_t prevPlayerDirection = playerDirection;  // allows previous value to be read without having to access mutex-protected data of playerDirection
+uint32_t prevPlayerDirection = 0;  // allows previous value to be read without having to access mutex-protected data of playerDirection
+const uint32_t MAP_CONVERSION_ANGLE = 80; // Note: 90 degrees means straight up.
 
-osMutexId_t ballMutex;
-
-// Golf Score
-int score;  // to be initialized to 0 in main
-
-// Struct to store the (x, y) coordinates of in-game sprites
-typedef struct {
+// Position Struct, Ball Mutex and Data
+extern osMutexId_t ballMutex;
+typedef struct { // Struct to store the (x, y) coordinates of in-game sprites
   uint32_t x;
   uint32_t y;
 } Pos;
 
-// The ball the player interacts with in-game is a point mass
-typedef struct {
-  float x_velocity;    // Get direction from these fields
-  float y_velocity;
+typedef struct {  // The ball the player interacts with in-game is a point mass
+  float x_velocity;    // Get speed and direction information from these fields
+  float y_velocity;    // Velocity information is only used for the ball and not the hole
   Pos pos;
-} Ball;
+  char *bitmap;
+} Actor;
 
-Ball golf_ball;
+Actor *golfBall;
+Actor *hole;
 
-void hit_ball(void *args) {
-  while (1) {
-    if (LPC_GPIO2->FIOPIN & (1<<10)) {
-      osMutexAcquire(powerMutex, osWaitForever);
-      osMutexAcquire();
-      
-      computeTrajectories();
+// Ball Physics Values
+const int32_t FRICTION_ACCEL = -5;
+const double ZERO_TOLERANCE = 0.001;
+const uint32_t TIME = 1;
 
-      osMutexRelease(powerMutex);
-      osMutexRelease(ballMutex);
-    }
-  }
-}
+// Golf Score Mutex and Data
+int golfScore;  
+extern osMutexId_t scoreMutex;
 
-void computeTrajectories(void *args) {
-  // check if ball hit is true
-  osMutexAcquire(playerDirectionMutex, osWaitForever);
-  // An angle of 140 will be facing upwards, 
-  uint32_t ballAngle = playerDirection;
-  osMutexRelease(playerDirectionMutex);
+
+// GLCD
+extern osThreadId_t animateID;
+
+// Mapping Data Values
+// -> Note: - The GLCD values are set for portrait view
+//          - The Bottom Left will be x = y = 0??? (CHECK)<<<<<< HERE
+const uint32_t LCD_HEIGHT = 320;  // y-axis
+const uint32_t LCD_WIDTH = 240;  // x-axis
+
+// Sizes and bitmaps
+const uint32_t BALL_SIZE = 5;
+const uint32_t HOLE_SIZE = 5;
+const uint32_t DIRECTION_ARROW_SIZE = 10;
+
+char ball_bitmap[] = {};
+char hole_bitmap[] = {};
+char arrow_bitmap[] = {};
+
+
+// ================================
+// ====== GLCD + Draw on GLCD =====
+// ================================
+
+// Initializes in-game elements
+// (1) Golf Score
+// (2) Golf Ball State
+// (3) Hole State
+void setupGame(void) {
+  golfScore = 0;
   
-  osMutexAcquire(powerMutex, osWaitForever);
-  uint32_t ballSpeed = powerLevel;
-  osMutexRelease(powerMutex);
+  golfBall = malloc(sizeof(Actor));
+  golfBall->pos.x = rand() % ((LCD_WIDTH - BALL_SIZE) - BALL_SIZE + 1) + BALL_SIZE;
+  golfBall->pos.y = rand() % ((LCD_HEIGHT - BALL_SIZE) - BALL_SIZE + 1) + BALL_SIZE;
+  golfBall->sprite = ball_bitmap;
 
-  double xVelocity = ballSpeed * tan(ballAngle);
-  double yVelocity = ballSpeed * tan()
+  hole = malloc(sizeof(Actor));
+  hole->sprite = hole_bitmap;
+
+  // Hole location cannot be same as ball location when spawned
+  do {
+    hole.x = rand() % ((LCD_WIDTH - HOLE_SIZE) - HOLE_SIZE + 1) + HOLE_SIZE;
+    hole.y = rand() % ((LCD_WIDTH - HOLE_SIZE) - HOLE_SIZE + 1) + HOLE_SIZE;
+  } while (hole.x == golfBall.pos.x && hole.y == golfBall.pos.y);
+
+  
 }
 
-void readPowerInput(void *args) {
-  while (1) {
-    // 0 means ON, 1 means OFF
-    // MAKE SURE THE VALUE DOES NOT GO BELOW 1 OR ABOVE 8
-    if (!(LPC_GPIO1->FIOPIN & (1 << 26))) {  // Pull Joystick down (decrease power level)
-      if (powerLevel > MIN_POWER) {
-          osMutexAcquire(powerMutex, osWaitForever);
-          powerLevel--;
-          osMutexRelease(powerMutex);
-      }
-    } else if (!(LPC_GPIO1->FIOPIN & (1 << 24))) {  // Push Joystick up (increase power level)
-      if (powerLevel < MAX_POWER) {
-        osMutexAcquire(powerMutex, osWaitForever);
-        powerLevel++;
-        osMutexRelease(powerMutex);
-      }
+void drawDirectionArrow(Ball ball) {
+    double mappedDirection = convertAngle(playerDirection);
+    for (uint32_t i = 1; i < DIRECTION_ARROW_SIZE + 1; i++) {  
+        uint32_t x = i*cos(mappedDirection);
+        uint32_t y = i*sin(mappedDirection);
+        
+        GLCD_PutPixel(x + ball->pos.x, y + ball->pos.y);
     }
-  }
 }
 
+// ================================
+// ===== DRAW HELPER FUNCTIONS ====
+// ================================
 
-// todo: SET POTENTIOMETER INPUT
-void readDirectionInput(void *args) {
-  while (1) {
-    // Read current angle of potentiometer
-    uint32_t currAngle;
-
-    LPC_ADC -> ADCR |= 1<<24;
-    while (!(LPC_ADC->ADGDR & (1<<31)));
-
-    currAngle = LPC_ADC -> ADGDR & 0XFFFF;
-    currAngle = currAngle >> 4;
-
-    currAngle = currAngle / 12;  // used to convert value to 340 degrees of rotation
-
-    // Update playerDirection if potentiometer direction changes
-    if (currAngle - prevPlayerDirection > 5) {  // add a hysteresis to prevent unwanted jitter 
-      osMutexAcquire(playerDirectionMutex, osWaitForever);
-      playerDirection = currAngle;
-      prevPlayerDirection = playerDirection;
-      osMutexRelease(playerDirectionMutex);
-      //printf("%d\n", playerDirection);
-    } 
-  }
+void drawPixelsAt(int x, int y) {
+  for (int i = 0; i < )  IAM DONE POOPING OK 
 }
 
+// =============================
+// ======= Serial Output =======
+// =============================
+
+void writeGolfScore(void *args) {
+  // -->> SERIAL OUTPUT <<--
+  // MUTEX: scoreMutex
+  // PROTECTED DATA: golfScore
+
+  osMutexAcquire(scoreMutex, osWaitForever);
+  printf("Golf Score: %d", golfScore);
+  osMutexRelease(scoreMutex);
+}
+
+// =============================
+// =========== LEDs ============
+// =============================
 
 // Initialize the LED pin directions (set as outputs)
 void initLEDs(void) { 
@@ -122,82 +141,235 @@ void initLEDs(void) {
 }
 
 void updateLEDs(void *args) {
+  // -->> LEDs <<-- 
+  // MUTEX: powerMutex
+  // PROTECTED DATA: powerLevel
+
   while (1) {
-    osMutexAcquire(powerMutex, osWaitForever);
 
-    int onLEDs[MAX_POWER];
-    for (int i = 0; i < powerLevel; ++i) {
-      onLEDs[i] = 1;
-    }
+      // Initialize array of ints to store
+      bool ledsOn[MAX_POWER];
+      
+      osMutexAcquire(powerMutex, osWaitForever);
+      for (int i =0; i < powerLevel; ++i) {
+        ledsOn[i] = true;
+      }
+      osMutexRelease(powerMutex);
 
-    // First LED -- may not need this check since MIN_POWER == 1
-    if (onLEDs[0] == 1) {
-      LPC_GPIO1->FIOSET |= 1<<28;
-    }
-    else {
-      LPC_GPIO1->FIOCLR |= 1<<28;
-    }
+      // LEDs are ordered from P.28 on the left to P.6 on the right
 
-    // Second LED
-    if (onLEDs[1] == 1) {
-      LPC_GPIO1->FIOSET |= 1<<29;
-    }
-    else {
-      LPC_GPIO1->FIOCLR |= 1<<29;
-    }
+      //--- GPIO 1 LEDs ---//
+      // First LED
+      if (ledsOn[0]) {
+        LPC_GPIO1->FIOSET |= (1 << 28);
+      } else {
+        LPC_GPIO1->FIOCLR |= (1 << 28);
+      }
 
-    // Third LED
-    if (onLEDs[2] == 1) {
-      LPC_GPIO1->FIOSET |= 1<<31;
-    }
-    else {
-      LPC_GPIO1->FIOCLR |= 1<<31;
-    }
+      // Second LED
+      if (ledsOn[1]) {
+        LPC_GPIO1->FIOSET |= (1 << 29);
+      } else {
+        LPC_GPIO1->FIOCLR |= (1 << 29);
+      }
 
-    // Fourth LED
-    if (onLEDs[3] == 1) {
-      LPC_GPIO2->FIOSET |= 1<<2;
-    }
-    else {
-      LPC_GPIO2->FIOCLR |= 1<<2;
-    }
+      // Third LED
+      if (ledsOn[2]) {
+        LPC_GPIO1->FIOSET |= (1 << 31);
+      } else {
+        LPC_GPIO1->FIOCLR |= (1 << 31);
+      }
 
-    // Fifth LED
-    if (onLEDs[4] == 1) {
-      LPC_GPIO2->FIOSET |= 1<<3;
-    }
-    else {
-      LPC_GPIO2->FIOCLR |= 1<<3;
-    }
+      //--- GPIO2 LEDs --//
+      if (ledsOn[3]) {
+        LPC_GPIO2->FIOSET |= (1 << 2);
+      } else {
+        LPC_GPIO2->FIOCLR |= (1 << 2);
+      }
 
-    // Sixth LED
-    if (onLEDs[5] == 1) {
-      LPC_GPIO2->FIOSET |= 1<<4;
-    }
-    else {
-      LPC_GPIO2->FIOCLR |= 1<<4;
-    }
+      if (ledsOn[4]) {
+        LPC_GPIO2->FIOSET |= (1 << 3);
+      } else {
+        LPC_GPIO2->FIOCLR |= (1 << 3);
+      }
 
-    // Seventh LED
-    if (onLEDs[6] == 1) {
-      LPC_GPIO2->FIOSET |= 1<<5;
-    }
-    else {
-      LPC_GPIO2->FIOCLR |= 1<<5;
-    }
+      if (ledsOn[5]) {
+        LPC_GPIO2->FIOSET |= (1 << 4);
+      } else {
+        LPC_GPIO2->FIOCLR |= (1 << 4);
+      }
 
-    // Eighth LED
-    if (onLEDs[7] == 1) {
-      LPC_GPIO2->FIOSET |= 1<<6;
-    }
-    else {
-      LPC_GPIO2->FIOCLR |= 1<<6;
-    }
-    osMutexRelease(powerMutex);
+      if (ledsOn[6]) {
+        LPC_GPIO2->FIOSET |= (1 << 5);
+      } else {
+        LPC_GPIO2->FIOCLR |= (1 << 5);
+      }
+
+      if (ledsOn[7]) {
+        LPC_GPIO2->FIOSET |= (1 << 6);
+      } else {
+        LPC_GPIO2->FIOCLR |= (1 << 6);
+      }
   }
 }
 
+// ===========================================
+// ====== READ USER INPUT FROM JOYSTICK ======
+// ===========================================
 
+void readPowerInput(void *args) {
+  //  -->> JOYSTICK <<--
+  // MUTEX: powerMutex
+  // PROTECTED DATA: powerLevel
+
+  unsigned int lastStateP26;
+  unsigned int currStateP26;
+
+  unsigned int lastStateP24;
+  unsigned int currStateP24;
+
+  while (1) {
+      // Read both P26 and P24 
+      currStateP26 = !(LPC_GPIO1->FIOPIN & (1 << 26));
+      currStateP24 = !(LPC_GPIO1->FIOPIN & (1 << 24));
+
+      // Joystick was pulled down, toward P.26 label and current state is not the same as previous state
+      // State check is done to 
+      if (currStateP26 && currStateP26 != lastStateP26) {
+        osMutexAcquire(powerMutex, osWaitForever);
+        if (powerLevel > MIN_POWER) {
+          powerLevel--;
+          printf("Power Level: %d\n", powerLevel);
+        }
+        osMutexRelease(powerMutex);
+      }
+
+      // Joytick was pushed up, toward P.24 label and current state is not the same as previous state
+      else if (currStateP24 && currStateP24 != lastStateP24) {
+        osMutexAcquire(powerMutex, osWaitForever);
+        if (powerLevel < MAX_POWER) {
+          powerLevel++;
+          printf("Power Level: %d\n", powerLevel);
+        }
+        osMutexRelease(powerMutex);
+      }
+  }
+}
+
+// todo: SET POTENTIOMETER INPUT
+void readDirectionInput(void *args) {
+    //  -->> POTENTIOMETER <<--
+    // MUTEX: playerDirectionMutex
+    // PROTECTED DATA: playerDirection
+    
+    while (1) {
+        // Read current angle of potentiometer
+        uint32_t currAngle;
+
+        LPC_ADC -> ADCR |= 1<<24;
+        while (!(LPC_ADC->ADGDR & (1<<31)));
+
+        currAngle = LPC_ADC -> ADGDR & 0XFFFF;
+        currAngle = currAngle >> 4;
+
+        currAngle = currAngle / 12;  // used to convert value to 340 degrees of rotation
+
+        // Update playerDirection if potentiometer direction changes
+        if (currAngle - prevPlayerDirection > 5) {  // add a hysteresis to prevent unwanted jitter 
+            osMutexAcquire(playerDirectionMutex, osWaitForever);
+            playerDirection = currAngle;
+            prevPlayerDirection = playerDirection;
+            osMutexRelease(playerDirectionMutex);
+            //printf("%d\n", playerDirection);
+        } 
+    }
+}
+
+void hitBall(void *args) {
+    // -->> PUSH BUTTON << --
+    // MUTEX: powerMutex, ballMutex, playerDirectionMutex
+    // PROTECTED DATA: powerLevel, ball, playerDirection
+    
+    while (1) {
+        if (LPC_GPIO2->FIOPIN & (1<<10)) {
+            osMutexAcquire(powerMutex, osWaitForever);
+            osMutexAcquire(ballMutex, osWaitForever);
+            osMutexAcquire(playerDirectionMutex, osWaitForever);
+
+            launchBall();
+
+            osMutexRelease(playerDirectionMutex);
+            osMutexRelease(ballMutex);
+            osMutexRelease(powerMutex);
+        }
+    }
+}
+
+// ===========================================
+// ============== GAME  PHYSICS ==============
+// ===========================================
+
+void launchBall(void *args) { // might need to change this <<<<< HERE
+    // Calculate x and y velocities
+    // -> Convert player angle for map coordinate system 
+    double initialAngle = convertAngle(playerDirection);
+
+    double initXVelocity = powerLevel * cos(initialAngle);
+    double initYVelocity = powerLevel * sin(initialAngle);
+
+    double currXVelocity = initXVelocity;
+    double currYVelocity = initYVelocity;
+
+    double xPosition = golfBall->pos.x;
+    double yPosition = golfBall->pos.y;
+
+    while (fabs(currXVelocity) > ZERO_TOLERANCE || fabs(currYVelocity) > ZERO_TOLERANCE) { // while there the ball still has velocity
+        // Calculate new Position Values
+        xPosition = xPosition + currXVelocity*TIME + 0.5*FRICTION_ACCEL*(pow(TIME, 2));
+        yPosition = yPosition + currYVelocity*TIME + 0.5*FRICTION_ACCEL*(pow(TIME, 2));
+
+        // Calculate in Hole
+        if (inHole()) {
+            break; // << WHAT TO DO <<< HERE
+        }
+
+        // Change direction if wall collision
+        if ((xPosition > LCD_WIDTH) || (xPosition < 0)) {
+            currXVelocity = -currXVelocity;
+        }
+        if ((yPosition > LCD_HEIGHT) || (yPosition < 0)) {
+            currYVelocity = -currYVelocity;
+        }
+
+        // Calculate new Velocity Values
+        currXVelocity = currXVelocity + FRICTION_ACCEL*TIME;
+        currYVelocity = currYVelocity + FRICTION_ACCEL*TIME;
+
+    }
+
+    // Update position of ball globally for next hit
+    golfBall->pos.x = xPosition;
+    golfBall->pos.y = yPosition;
+}
+
+bool inHole(Ball ball) {
+
+    // insert hole detection here
+}
+
+// ===========================================
+// =============== DRAW ON LCD ===============
+// ===========================================
+
+
+
+// ===========================================
+// ============== MISCELLANEOUS ==============
+// ===========================================
+
+double convertAngle(uint32_t rawAngle) {
+    return (rawAngle - MAP_CONVERSION_ANGLE) * 2*M_PI / 360;
+}
 
 /*
 
@@ -211,6 +383,8 @@ void updateLEDs(void *args) {
    simplify the threading code for lab 1. They are declared in main, so must be
    listed as extern here
 */
+
+/*
 extern actor *player;
 extern actor *enemy;
 extern actor *lasers[2];
@@ -302,7 +476,7 @@ void initializeActors() {
           Generally this should be handled by a separate function. However, it
      made sense for simplicity of understanding the code that the first thing we
      do is initialize the actors, so we did this in main instead.
-  */
+  
   enemy = malloc(sizeof(actor));
   enemy->horizontalPosition = 20; // start almost in the top corner
   enemy->verticalPosition = 300;
@@ -332,4 +506,4 @@ void initializeActors() {
   lasers[ENEMY_LASER]->speed = ENEMY_LASER_SPEED;
   lasers[ENEMY_LASER]->dir = 0;
   lasers[ENEMY_LASER]->sprite = laserSprite;
-}
+}*/
