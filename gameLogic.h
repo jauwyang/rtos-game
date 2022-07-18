@@ -26,8 +26,9 @@ void updateLEDs(void *args);
 void readPowerInput(void *args);
 void readDirectionInput(void *args);
 void hitBall(void *args);
-void launchBall(void *args);
+void launchBall(void);
 void writeGolfScore(void *args);
+void setupGame(void);
 
 double convertAngle(uint32_t rawAngle);
 
@@ -36,8 +37,8 @@ void initActors(void);
 void draw(void *args);
 void drawPixelsAt(int x, int y, int limit);
 void drawSpriteAt(int x, int y, char *bitmap, int bitmap_size);
-
 void drawBall(void);
+void drawHole(void);
 
 void animate(void *args);
 bool inHole(Actor *ball, Actor *hole, int ball_size, int hole_size);
