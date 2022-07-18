@@ -19,7 +19,7 @@ int main()
 
 	GLCD_Init();
 	GLCD_Clear(Green);
-	GLCD_SetTextColor(Black);
+	GLCD_SetTextColor(Green);
 	
 	// Setting up and enabling the ADC
 	LPC_PINCON->PINSEL1 &= ~(1<<18);
@@ -38,6 +38,11 @@ int main()
 	playerDirectionMutex = osMutexNew(NULL);
 	ballMutex = osMutexNew(NULL);
 	scoreMutex = osMutexNew(NULL);
+	
+	// Set up the Actors (Hole and Ball)
+	setupGame();
+	drawBall();
+	drawHole();
 
 	// Create the threads
 	osThreadNew(readPowerInput, NULL, NULL);
@@ -46,6 +51,7 @@ int main()
 	//osThreadNew(hitBall, NULL, NULL);
 	//osThreadNew(drawRando, NULL, NULL);
 	//osThreadNew(draw, NULL, NULL);
+	osThreadNew(hitBall, NULL, NULL); 
 	
 	osKernelStart();
 
