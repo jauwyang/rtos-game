@@ -48,13 +48,12 @@ double convertAngle(uint32_t rawAngle);
 
 void initActors(void);
 
-void draw(void *args);
 void drawPixelsAt(int x, int y, int limit);
 void drawSpriteAt(int x, int y, char *bitmap, int bitmap_size);
 void drawBall(void *args);
 void drawHole(void);
 
 void animate(void *args);
-bool inHole(Ball *ball, Hole *hole, int ball_size, int hole_size);
+bool inHole(int ball_size, int hole_size);
 
 #endif
