@@ -52,6 +52,7 @@ void drawPixelsAt(int x, int y, int limit);
 void drawSpriteAt(int x, int y, char *bitmap, int bitmap_size);
 void drawBall(void *args);
 void drawHole(void);
+void createArrowBitMap(void *args)
 
 void animate(void *args);
 bool inHole(int ball_size, int hole_size);

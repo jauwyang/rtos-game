@@ -58,6 +58,7 @@ int main()
 	//osThreadNew(draw, NULL, NULL);
 	osThreadNew(hitBall, NULL, NULL); 
 	osThreadNew(drawBall, NULL, NULL);
+	osThreadNew(createArrowBitMap, NULL, NULL);
 	
 	osKernelStart();
 

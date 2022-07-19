@@ -89,6 +89,8 @@ void setupGame(void) {
 }
 
 
+
+
 void drawPixelsAt(int x, int y, int limit) {
 		for (int i = 0; i < limit; ++i) {
 			for (int j = 0; j < limit; ++j) {
@@ -126,7 +128,7 @@ void drawBall(void *args) {
 	
 	osMutexAcquire(ballMutex, osWaitForever);
 	GLCD_SetTextColor(Green);
-	drawSpriteAt(golfBall->pos.x, golfBall->pos.y, ball_bitmap, 3);
+	drawSpriteAt(golfBall->pos.x, golfBall->pos.y, ballBitmap, 3);
 	osMutexRelease(ballMutex);
 }
 
@@ -136,6 +138,13 @@ void drawHole(void) {
 	drawSpriteAt(hole->pos.x, hole->pos.y, hole_bitmap, 3);
 }
 
+
+void drawArrow(void *args) {
+  osMutexAcquire(arrowBitMapMutex, osWaitForever);
+  osMutexAcquire(ballMutex, osWaitForever);
+  drawSpriteAt(golfBall->pos.x, golfBall->pos.y, arrow);
+
+}
 
 // MUTEX: ballMutex, arrowBitMapMutex
 // PROTECTED DATA: golfBall, arrowBitMap
@@ -284,8 +293,6 @@ void updateLEDs(void *args) {
 
 
 
-
-
 // ===========================================
 // ============= READ USER INPUT =============
 // ===========================================
@@ -367,7 +374,12 @@ void hitBall(void *args) {
       osMutexAcquire(isHitMutex, osWaitForever);
       isHit = true;
 
-      // Can set here maybe? (See below)
+      // Set the initial velocities of the ball
+      osMutexAcquire(ballMutex, osWaitForever);
+      double initialAngle = convertAngle(golfBall->direction);
+      golfBall->xVelocity = golfBall->powerLevel * cos(initialAngle);
+      golfBall->yVelocity = golfBall->powerLevel * sin(initialAngle);
+      osMutexRelease(ballMutex);
 
       osMutexRelease(isHitMutex);
     }
@@ -376,43 +388,38 @@ void hitBall(void *args) {
 
 
 
-
-
 // ===========================================
 // ============== GAME  PHYSICS ==============
 // ===========================================
 
-
-// TODO: Fix overwriting of current data every time the thread is run with initial data
-// i.e. can initial values be set elsewhere?
-void launchBall(void *args) { // might need to change this <<<<< HERE (acceleration should always be in opposite directin of travel)
-  // Calculate x and y velocities
-  // -> Convert player angle for map coordinate system
-
+void launchBall(void) { // might need to change this <<<<< HERE (acceleration should always be in opposite directin of travel)
   while(1) {
     osMutexAcquire(isHitMutex, osWaitForever);  // acquire hit status to ensure hit status does not change while calcs are being performed
     
     osMutexAcquire(ballMutex, osWaitForever);
-  
-    // Convert player direction to a usable angle
-    double initialAngle = convertAngle(golfBall->direction);
-    double powerLevel = golfBall->power;
 
-    // Set up the initial velocities using the powerLevel and the initialAngle
-    double currentXVelocity = powerLevel * cos(initialAngle);
-    double currentYVelocity = powerLevel * sin(initialAngle);
-  
+    // Change direction of acceleration to mimic non-conservative force/work
+    // xVelocity determined by cos: cos < 0 for theta in the interval  (90, 270) 
+    double xAccel = (xVelocity < 0) ? FRICTION_ACCEL : -FRICTION_ACCEL;
+
+    // yVelocity determined by sin: sin < 0 for theta in the interval (180, 360)
+    double yAccel = (yVelocity < 0) ? FRICTION_ACCEL : -FRICTION_ACCEL;
+
+    // Calculate new Velocity Values and update Ball
+    golfBall->xVelocity = golfBall->xVelocity + xAccel * TIME;
+    golfBall->yVelocity = golfBall->yVelocity + yAccel * TIME;
+
     // Perform kinematics computation 
-    double xPosition = golfBall->pos.x + golfBall->xVelocity * TIME + 0.5 * FRICTION_ACCEL * (pow(TIME, 2));
-    double yPosition = golfBall->pos.y + golfBall->yVelocity * TIME + 0.5 * FRICTION_ACCEL * (pow(TIME, 2));
+    double xPosition = golfBall->pos.x + golfBall->xVelocity * TIME + 0.5 * xAccel * (pow(TIME, 2));
+    double yPosition = golfBall->pos.y + golfBall->yVelocity * TIME + 0.5 * yAccel * (pow(TIME, 2));
 
-    // Change direction and set a min or max cap on the (x, y) position of the ball if outermost wall collision
     bool isXLessThanMin = xPosition < 0;
     bool isXMoreThanMax = xPosition > LCD_WIDTH;
 
     bool isYLessThanMin = yPosition < 0;
     bool isYMoreThanMax = yPosition > LCD_HEIGHT;
 
+    // Change direction and set a min or max cap on the (x, y) position of the ball if outermost wall collision
     if (isXLessThanMin || isXMoreThanMax) {
         golfBall->xVelocity = -currXVelocity;
 
@@ -432,9 +439,6 @@ void launchBall(void *args) { // might need to change this <<<<< HERE (accelerat
 
     }
 
-    // Calculate new Velocity Values
-    currXVelocity + FRICTION_ACCEL * TIME;
-    currYVelocity = currYVelocity + FRICTION_ACCEL * TIME;
   
     // Semaphore to signal that the incremental position computations have completed -- ready to draw
     osSemaphoreRelease(canDrawSem);
@@ -445,12 +449,6 @@ void launchBall(void *args) { // might need to change this <<<<< HERE (accelerat
     isHit = false;
     osMutexRelease(isHitMutex);
   }
-
-  // BALL STOPS
-  // Update position and draw ball of ball globally for next hit
-  golfBall->pos.x = xPosition;
-  golfBall->pos.y = yPosition;
-  osMutexRelease(ballMutex);
 }
 
 
