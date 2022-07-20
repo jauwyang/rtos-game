@@ -9,6 +9,9 @@ osMutexId_t arrowBitMapMutex;
 
 osSemaphoreId_t canDrawSem;
 
+osThreadId_t hitBallID;
+osThreadId_t writeScoreID;
+
 int main()
 {
 	SystemInit();
@@ -59,11 +62,13 @@ int main()
 	//osThreadNew(hitBall, NULL, NULL);
 	//osThreadNew(drawRando, NULL, NULL);
 	//osThreadNew(draw, NULL, NULL);
-	osThreadNew(hitBall, NULL, NULL); 
+	hitBallID = osThreadNew(hitBall, NULL, NULL); 
 	//osThreadNew(createArrowBitMap, NULL, NULL);
 	//osThreadNew(drawArrow, NULL, NULL);
 	//osThreadNew(drawMovingBall, NULL, NULL);
 	//osThreadNew(createArrowBitMap, NULL, NULL);
+	writeScoreID = osThreadNew(writeGolfScore, NULL, NULL);
+	osThreadNew(checkEndGame, NULL, NULL);
 	
 	osKernelStart();
 
