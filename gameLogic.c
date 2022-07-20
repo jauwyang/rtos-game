@@ -8,6 +8,8 @@
 # define M_PI 3.14159265358979323846
 # endif
 
+extern osThreadId_t hitBallID;
+extern osThreadId_t writeScoreID;
 
 // Power Mutex and Data
 const uint32_t MAX_POWER = 8;
@@ -24,14 +26,15 @@ Ball *golfBall;
 Hole *hole;
 
 // golfBall Physics Values
-const int FRICTION_ACCEL = -5;
-const double ZERO_TOLERANCE = 1E-6;
+const double FRICTION_ACCEL = 1.1;
+const double ZERO_TOLERANCE = 1E-2;
 const uint32_t TIME = 1;
 
 bool isHit = false;
 extern osMutexId_t isHitMutex;
 
 // Golf Score Mutex and Data
+const int MAX_GOLF_SCORE = 7;
 int golfScore;  
 extern osMutexId_t scoreMutex;
 
@@ -54,6 +57,7 @@ const uint32_t DIRECTION_ARROW_SIZE = 7;
 const uint32_t ARROW_BITMAP_SIZE_WIDTH = 15;
 const uint32_t ARROW_BITMAP_MID = (ARROW_BITMAP_SIZE_WIDTH + 1) / 2;
 
+char stillBallBitmap[] = {0, 0x38, 0x38, 0x38, 0};
 char ballBitmap[] = {0x38, 0x38, 0x38};
 char holeBitmap[] = {0x38, 0x38, 0x38};
 char arrowBitMap[ARROW_BITMAP_MID] = {0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
@@ -87,9 +91,10 @@ void setupGame(void) {
     hole->pos.y = rand() % ((LCD_HEIGHT - HOLE_SIZE) - HOLE_SIZE + 1) + HOLE_SIZE;
   } while (hole->pos.x == golfBall->pos.x && hole->pos.y == golfBall->pos.y);
 	
-	// Draw the ball
+	// Draw the still ball
 	GLCD_SetTextColor(White);
-	drawSpriteAt(golfBall->pos.x, golfBall->pos.y, ballBitmap, 3);
+	//drawSpriteAt(golfBall->pos.x, golfBall->pos.y, ballBitmap, 3);
+	drawSpriteAt(golfBall->pos.x, golfBall->pos.y, stillBallBitmap, 5);
 	
 	// Draw the hole
 	GLCD_SetTextColor(Black);
@@ -101,6 +106,23 @@ void setupGame(void) {
 }
 
 
+void checkEndGame(void *args) {
+	while (1) {
+		osMutexAcquire(scoreMutex, osWaitForever);
+		int score = golfScore;
+		osMutexRelease(scoreMutex);
+
+		osMutexAcquire(ballMutex, osWaitForever);
+		// Terminate all threads responsible for drawing on the LCD
+		if (inHole(3, 3) || score > MAX_GOLF_SCORE) {
+				osThreadTerminate(hitBallID);
+				//osThreadTerminate(arrowDrawingFunction);
+				osThreadTerminate(writeScoreID);
+				printf("%s", "Threads terminated, Press Reset Button to play again.");
+		}
+		osMutexRelease(ballMutex);
+	}
+}
 
 
 void drawPixelsAt(int x, int y, int limit) {
@@ -123,6 +145,7 @@ void drawSpriteAt(int x, int y, char *bitmap, int bitmap_size) {
 		spriteShift = 0;
 		for (int j = 0; j < SPRITE_COLS*SPRITE_SCALE; j+=SPRITE_SCALE) {
 			if ((bitmap[spriteIndex] >> spriteShift) & 1) {
+				
 				drawPixelsAt(x + ((bitmap_size - 1) * SPRITE_SCALE - i), y + j, SPRITE_SCALE);
 			}
 			
@@ -131,12 +154,6 @@ void drawSpriteAt(int x, int y, char *bitmap, int bitmap_size) {
 		
 		spriteIndex--; // Bitmap row coordinate
 	}
-}
-
-// Draws the ball at the given position 
-void drawBall(void) {
-	GLCD_SetTextColor(White);
-	drawSpriteAt(golfBall->pos.x, golfBall->pos.y, ballBitmap, 3);
 }
 
 /*
@@ -224,10 +241,13 @@ void writeGolfScore(void *args) {
   // -->> SERIAL OUTPUT <<--
   // MUTEX: scoreMutex
   // PROTECTED DATA: golfScore
+	while (1) {
+		osMutexAcquire(scoreMutex, osWaitForever);
+		printf("Golf Score: %d\n", golfScore);
+		osMutexRelease(scoreMutex);
+		osDelay(1000U);
+	}
 
-  osMutexAcquire(scoreMutex, osWaitForever);
-  printf("Golf Score: %d", golfScore);
-  osMutexRelease(scoreMutex);
 }
 
 
@@ -391,18 +411,48 @@ void readDirectionInput(void *args) {
       golfBall -> direction = currAngle;
       prevPlayerDirection = currAngle;
       osMutexRelease(ballMutex);
-      printf("%d\n", currAngle - MAP_CONVERSION_ANGLE);
+      //printf("%d\n", currAngle - MAP_CONVERSION_ANGLE);
     } 
   }
+}
+
+void orientStillBall(double unprocAngle) {
+		
 }
 
 
 // -->> PUSH BUTTON << --
 void hitBall(void *args) {
+	unsigned int lastButtonState;
+	unsigned int currButtonState;
+	
 	while (1) {
-		if (!(LPC_GPIO2->FIOPIN & (1<<10))) {
+		currButtonState = !(LPC_GPIO2->FIOPIN & (1<<10));
+		
+		if (currButtonState && currButtonState != lastButtonState) {
+			// Increment the golf score every time the ball is hit
+			osMutexAcquire(scoreMutex, osWaitForever);
+			golfScore++;
+			osMutexRelease(scoreMutex);
+			
+			// Ball draw and logic ops
+			osMutexAcquire(ballMutex, osWaitForever);
+			// Erase the still ball by simply writing to all '1' locations in the bitmap with bg colour
+			GLCD_SetTextColor(Green);
+			drawSpriteAt(golfBall->pos.x, golfBall->pos.y, stillBallBitmap, 5);
+			
+			// Move the ball bitmap, i.e. animate the ball moving 
 			launchBall();
+			
+			// Once the ball has stopped, launchBall() will return. At this point, it is now safe to redraw the still ball.
+			// Draw the still ball.
+			GLCD_SetTextColor(White);
+			drawSpriteAt(golfBall->pos.x, golfBall->pos.y, stillBallBitmap, 5);
+			
+			osMutexRelease(ballMutex);
 		}
+		
+		lastButtonState = currButtonState;
 	}
 }
 
@@ -410,9 +460,7 @@ void hitBall(void *args) {
 // ============== GAME  PHYSICS ==============
 // ===========================================
 
-void launchBall(void) {
-	osMutexAcquire(ballMutex, osWaitForever);
-	
+void launchBall(void) {	
 	// Get angle, power, current position
 	double xPrevPos = golfBall->pos.x;
 	double yPrevPos = golfBall->pos.y;
@@ -421,10 +469,10 @@ void launchBall(void) {
 	uint32_t power = golfBall->power;
 	
 	// Set initial ball velocity
-	golfBall->xVelocity = power * cos(angle);
-	golfBall->yVelocity = power * sin(angle);
+	golfBall->xVelocity = power * cos(angle) + pow(power, 2);
+	golfBall->yVelocity = power * sin(angle) + pow(power, 2);
 	
-	while (fabs(golfBall->xVelocity) > ZERO_TOLERANCE && fabs(golfBall->yVelocity) > ZERO_TOLERANCE) {
+	while (abs(golfBall->xVelocity) != 0  && abs(golfBall->yVelocity) != 0) {
 		
 		//*** Erase the ball at the previous position ***//
 		GLCD_SetTextColor(Green);
@@ -461,10 +509,12 @@ void launchBall(void) {
 		GLCD_SetTextColor(White);
 		drawSpriteAt(golfBall->pos.x, golfBall->pos.y, ballBitmap, 3);
 		
-		/*
+		
 		// Update the velocity at the new position
-		golfBall->xVelocity = golfBall->xVelocity + xAccel * TIME;
-		golfBall->yVelocity = golfBall->yVelocity + yAccel * TIME;*/
+		golfBall->xVelocity = (golfBall->xVelocity < 0) ? golfBall->xVelocity + 1 : golfBall->xVelocity - 1; //+ xAccel * TIME;
+		golfBall->yVelocity = (golfBall->yVelocity < 0) ? golfBall->yVelocity + 1 : golfBall->yVelocity - 1;
+		
+		//golfBall->yVelocity = golfBall->yVelocity //+ yAccel * TIME;
 		
 		// Change the direction of the current velocity based on the position of the ball
 		// Run bounce algorithm
@@ -480,8 +530,6 @@ void launchBall(void) {
 		xPrevPos = golfBall->pos.x;
 		yPrevPos = golfBall->pos.y;
 	}
-	
-	osMutexRelease(ballMutex);
 }
 
 bool inHole(int sizeBall, int sizeHole) {
@@ -494,16 +542,16 @@ bool inHole(int sizeBall, int sizeHole) {
 
 	// Extract coordinates of the hole
 	int xTopHole = hole->pos.x;
-	int y_top_hole = hole->pos.y;
+	int yTopHole = hole->pos.y;
 	
 	int xBotHole = hole->pos.x + SPRITE_COLS * SPRITE_SCALE;
 	int yBotHole = hole->pos.y + sizeHole * SPRITE_SCALE;
 	
   // If this returns true, then the golfBall is in the hole
-	return !(xTopBall < xBotHole && 
+	return (xTopBall < xBotHole && 
            xBotBall > xTopHole &&
            yTopBall < yBotHole &&
-           yBotBall > y_top_hole);
+           yBotBall > yTopHole);
 }
 
 
