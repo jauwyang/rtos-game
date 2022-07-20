@@ -23,9 +23,9 @@ extern osMutexId_t ballMutex;
 Ball *golfBall;
 Hole *hole;
 
-// Ball Physics Values
-const int32_t FRICTION_ACCEL = -5;
-const double ZERO_TOLERANCE = 0.001;
+// golfBall Physics Values
+const int FRICTION_ACCEL = -5;
+const double ZERO_TOLERANCE = 1E-6;
 const uint32_t TIME = 1;
 
 bool isHit = false;
@@ -44,8 +44,8 @@ extern osSemaphoreId_t canDrawSem;
 // Mapping Data Values
 // -> Note: - The GLCD values are set for portrait view
 //          - The Bottom Left will be x = y = 0??? (CHECK)<<<<<< HERE
-const uint32_t LCD_HEIGHT = 320;  // y-axis
-const uint32_t LCD_WIDTH = 240;  // x-axis
+const uint32_t LCD_HEIGHT = 240;  // y-axis
+const uint32_t LCD_WIDTH = 320;  // x-axis
 
 // Sizes and bitmaps
 const uint32_t BALL_SIZE = 5;
@@ -56,7 +56,7 @@ const uint32_t ARROW_BITMAP_MID = (ARROW_BITMAP_SIZE_WIDTH + 1) / 2;
 
 char ballBitmap[] = {0x38, 0x38, 0x38};
 char holeBitmap[] = {0x38, 0x38, 0x38};
-char arrowBitMap[ARROW_BITMAP_SIZE_WIDTH] = {};
+char arrowBitMap[ARROW_BITMAP_MID] = {0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 extern osThreadId_t arrowBitMapMutex;
 
@@ -65,27 +65,39 @@ extern osThreadId_t arrowBitMapMutex;
 // ================================
 
 
-// Initializes in-game elements
+// Initializes in-game elements. Called before threads are created and the kernel is initialized.
 // (1) Golf Score
-// (2) Golf Ball State
+// (2) Golf golfBall State
 // (3) Hole State
 void setupGame(void) {
   golfScore = 0;
   
-  golfBall = malloc(sizeof(Ball));
+  golfBall = malloc(sizeof(golfBall));
   golfBall->pos.x = rand() % ((LCD_WIDTH - BALL_SIZE) - BALL_SIZE + 1) + BALL_SIZE;
   golfBall->pos.y = rand() % ((LCD_HEIGHT - BALL_SIZE) - BALL_SIZE + 1) + BALL_SIZE;
-  golfBall->bitmap = ball_bitmap;
+  golfBall->bitmap = ballBitmap;
   golfBall->power = 1;
 
   hole = malloc(sizeof(Hole));
-  hole->bitmap = hole_bitmap;
+  hole->bitmap = holeBitmap;
 
-  // Hole location cannot be same as ball location when spawned
+  // Hole location cannot be same as golfBall location when spawned
   do {
     hole->pos.x = rand() % ((LCD_WIDTH - HOLE_SIZE) - HOLE_SIZE + 1) + HOLE_SIZE;
-    hole->pos.y = rand() % ((LCD_WIDTH - HOLE_SIZE) - HOLE_SIZE + 1) + HOLE_SIZE;
+    hole->pos.y = rand() % ((LCD_HEIGHT - HOLE_SIZE) - HOLE_SIZE + 1) + HOLE_SIZE;
   } while (hole->pos.x == golfBall->pos.x && hole->pos.y == golfBall->pos.y);
+	
+	// Draw the ball
+	GLCD_SetTextColor(White);
+	drawSpriteAt(golfBall->pos.x, golfBall->pos.y, ballBitmap, 3);
+	
+	// Draw the hole
+	GLCD_SetTextColor(Black);
+	drawSpriteAt(hole->pos.x, hole->pos.y, holeBitmap, 3);
+	
+	// Draw the arrow
+	GLCD_SetTextColor(Red);
+	drawSpriteAt(golfBall->pos.x, golfBall->pos.y, arrowBitMap, ARROW_BITMAP_MID);
 }
 
 
@@ -121,63 +133,83 @@ void drawSpriteAt(int x, int y, char *bitmap, int bitmap_size) {
 	}
 }
 
-
-void drawBall(void *args) {	
-	// Wait for the semaphore; if hitBall signals that calculations are done, can draw
-	osSemaphoreAcquire(canDrawSem, osWaitForever);
-	
-	osMutexAcquire(ballMutex, osWaitForever);
-	GLCD_SetTextColor(Green);
+// Draws the ball at the given position 
+void drawBall(void) {
+	GLCD_SetTextColor(White);
 	drawSpriteAt(golfBall->pos.x, golfBall->pos.y, ballBitmap, 3);
-	osMutexRelease(ballMutex);
 }
 
-
-void drawHole(void) {
-	GLCD_SetTextColor(Black);
-	drawSpriteAt(hole->pos.x, hole->pos.y, hole_bitmap, 3);
-}
-
-
+/*
 void drawArrow(void *args) {
-  osMutexAcquire(arrowBitMapMutex, osWaitForever);
-  osMutexAcquire(ballMutex, osWaitForever);
-  drawSpriteAt(golfBall->pos.x, golfBall->pos.y, arrow);
+	while (1) {
+	  osMutexAcquire(arrowBitMapMutex, osWaitForever);
+		osMutexAcquire(ballMutex, osWaitForever);
+		drawSpriteAt(golfBall->pos.x, golfBall->pos.y, arrowBitMap, ARROW_BITMAP_MID);
+		
+		osMutexRelease(ballMutex);
+		osMutexRelease(arrowBitMapMutex);	
+	}
+}*/
 
-}
 
 // MUTEX: ballMutex, arrowBitMapMutex
 // PROTECTED DATA: golfBall, arrowBitMap
 void createArrowBitMap(void *args) {
-  osMutexAcquire(ballMutex, osWaitForever);
-  double ballDirection = convertAngle(goldBall->direction);
-  osMutexRelease(ballMutex);
+	while (1) {
+		osMutexAcquire(ballMutex, osWaitForever);
+		double ballDirection = convertAngle(golfBall->direction);
+		double xPos = golfBall->pos.x;
+		double yPos = golfBall->pos.y;
+		osMutexRelease(ballMutex);
 
-  // Initialize Empty Bitmap with 1 at center
-  uint32_t arrow[ARROW_BITMAP_SIZE_WIDTH][ARROW_BITMAP_SIZE_WIDTH] = {0};
-  arrow[ARROW_BITMAP_MID-1][ARROW_BITMAP_MID-1] = 1;  // make center of bit map (where the ball would be) 1
+		// Initialize Empty Binary Bitmap with 1 at center
+		uint32_t fullArrow[ARROW_BITMAP_SIZE_WIDTH][ARROW_BITMAP_SIZE_WIDTH] = {0};
+		fullArrow[ARROW_BITMAP_MID-1][ARROW_BITMAP_MID-1] = 1;  // make center of bit map (where the ball would be) 1
 
-  // Draw Arrow in the 2D Bitmap starting at center of map
-  for (uint32_t i = 1; i < DIRECTION_ARROW_SIZE + 1; i++) {  
-    uint32_t x = round(i*cos(ballDirection));
-    uint32_t y = round(i*sin(ballDirection));
-    arrow[x + ARROW_BITMAP_MID - 1][y+ ARROW_BITMAP_MID - 1] = 1;
-  }
+		// Draw Arrow in the 2D Bitmap starting at center of map
+		for (uint32_t i = 1; i < DIRECTION_ARROW_SIZE + 1; i++) {  
+			uint32_t x = round(i*cos(ballDirection));
+			uint32_t y = round(i*sin(ballDirection));
+			fullArrow[x + ARROW_BITMAP_MID - 1][y+ ARROW_BITMAP_MID - 1] = 1;
+		}
 
-  char tempArrowBitMap[ARROW_BITMAP_SIZE_WIDTH] = {};
-  
-  // Convert 2D Binary Bitmap into Hexidecimal bitmap
-  for (uint32_t rowOf16Bits = 0; rowOf16Bits < ARROW_BITMAP_SIZE_WIDTH; rowOf16Bits++) {
-    uint32_t decimalValueOfRow = convertBinaryArrayToDecimal(arrowBitMap[rowOf16Bits], ARROW_BITMAP_SIZE_WIDTH);
-    char hexRow[ARROW_BITMAP_SIZE_WIDTH];
-    sprintf(hexRow, "0x%02X", decimalValueOfRow);
-    tempArrowBitMap[rowOf16Bits] = hexRow;
-  }
-  
-  // Update arrow bit map
-  osMutexAcquire(arrowBitMapMutex, osWaitForever);
-  arrowBitMap = tempArrowBitMap;
-  osMutexRelease(arrowBitMapMutex);
+		// Truncate 2D Arrow Array into array of only the quadrant that has the arrow
+		// -> Get end tip of arrow to determine quandrant arrow lies in
+		uint32_t xTipOfArrowIndex = round(DIRECTION_ARROW_SIZE*cos(ballDirection)) + ARROW_BITMAP_MID;
+		uint32_t yTipOfArrowIndex = round(DIRECTION_ARROW_SIZE*sin(ballDirection)) + ARROW_BITMAP_MID;
+		// -> Based on location/quadrant of arrow, store the start and end index of array of the quadrant
+		uint32_t startXIndexOfFullArrow = (ARROW_BITMAP_MID - 1 > xTipOfArrowIndex) ? 0 : ARROW_BITMAP_MID - 1;
+		uint32_t startYIndexOfFullArrow = (ARROW_BITMAP_MID - 1 > yTipOfArrowIndex) ? 0 : ARROW_BITMAP_MID - 1;
+		uint32_t endXIndexOfFullArrow = startXIndexOfFullArrow + ARROW_BITMAP_MID;
+		uint32_t endYIndexOfFullArrow = startYIndexOfFullArrow + ARROW_BITMAP_MID;
+		// -> Initialize smaller array containing only quadrant 
+		uint32_t quadrantArrow[ARROW_BITMAP_MID][ARROW_BITMAP_MID] = {0};
+		// -> Initialize index for smaller quadrant array to loop over for bits/image to be copied over (Array has different index than fullArrow array) 
+		uint32_t iQuadrantArrowIndex;
+		uint32_t jQuadrantArrowIndex;
+		// -> Copy bits/image of arrow in fullArrow array into smaller quadrantArrow array
+		iQuadrantArrowIndex = 0;
+		for (uint32_t iFullArrowIndex = startXIndexOfFullArrow; iFullArrowIndex < endXIndexOfFullArrow; iFullArrowIndex++) {
+			jQuadrantArrowIndex = 0;
+			for (uint32_t jFullArrowIndex = startYIndexOfFullArrow; jFullArrowIndex < endYIndexOfFullArrow; jFullArrowIndex++) {
+				quadrantArrow[iQuadrantArrowIndex][jQuadrantArrowIndex] = fullArrow[iFullArrowIndex][jFullArrowIndex];
+				jQuadrantArrowIndex++;
+			}
+			iQuadrantArrowIndex++;
+		}
+
+		// Convert 2D Binary Bitmap (quadrantArrow array) into Hexadecimal bitmap
+		// Update arrow bitmap
+		//osMutexAcquire(arrowBitMapMutex, osWaitForever);
+		for (uint32_t rowOf8Bits = 0; rowOf8Bits < ARROW_BITMAP_MID; rowOf8Bits++) {
+			char decimalValueOfRow = convertBinaryArrayToDecimal(quadrantArrow[rowOf8Bits], ARROW_BITMAP_MID);
+			arrowBitMap[rowOf8Bits] = decimalValueOfRow;
+		}
+		//osMutexRelease(arrowBitMapMutex);
+		
+		drawSpriteAt(xPos, yPos, arrowBitMap, ARROW_BITMAP_MID);
+
+	}
 }
 
 
@@ -353,7 +385,7 @@ void readDirectionInput(void *args) {
 
     currAngle = currAngle / 12;  // used to convert value to 340 degrees of rotation
 
-    // Update ball direction if potentiometer direction changes
+    // Update golfBall direction if potentiometer direction changes
     if (currAngle - prevPlayerDirection > 5) {  // add a hysteresis to prevent unwanted jitter 
       osMutexAcquire(ballMutex, osWaitForever);
       golfBall -> direction = currAngle;
@@ -366,99 +398,99 @@ void readDirectionInput(void *args) {
 
 
 // -->> PUSH BUTTON << --
-// MUTEX: isHitMutex
-// PROTECTED DATA: isHit
 void hitBall(void *args) {
-  while (1) {
-    if (!(LPC_GPIO2->FIOPIN & (1<<10))) {
-      osMutexAcquire(isHitMutex, osWaitForever);
-      isHit = true;
-
-      // Set the initial velocities of the ball
-      osMutexAcquire(ballMutex, osWaitForever);
-      double initialAngle = convertAngle(golfBall->direction);
-      golfBall->xVelocity = golfBall->powerLevel * cos(initialAngle);
-      golfBall->yVelocity = golfBall->powerLevel * sin(initialAngle);
-      osMutexRelease(ballMutex);
-
-      osMutexRelease(isHitMutex);
-    }
-  }
+	while (1) {
+		if (!(LPC_GPIO2->FIOPIN & (1<<10))) {
+			launchBall();
+		}
+	}
 }
-
-
 
 // ===========================================
 // ============== GAME  PHYSICS ==============
 // ===========================================
 
-void launchBall(void) { // might need to change this <<<<< HERE (acceleration should always be in opposite directin of travel)
-  while(1) {
-    osMutexAcquire(isHitMutex, osWaitForever);  // acquire hit status to ensure hit status does not change while calcs are being performed
-    
-    osMutexAcquire(ballMutex, osWaitForever);
-
-    // Change direction of acceleration to mimic non-conservative force/work
-    // xVelocity determined by cos: cos < 0 for theta in the interval  (90, 270) 
-    double xAccel = (xVelocity < 0) ? FRICTION_ACCEL : -FRICTION_ACCEL;
-
-    // yVelocity determined by sin: sin < 0 for theta in the interval (180, 360)
-    double yAccel = (yVelocity < 0) ? FRICTION_ACCEL : -FRICTION_ACCEL;
-
-    // Calculate new Velocity Values and update Ball
-    golfBall->xVelocity = golfBall->xVelocity + xAccel * TIME;
-    golfBall->yVelocity = golfBall->yVelocity + yAccel * TIME;
-
-    // Perform kinematics computation 
-    double xPosition = golfBall->pos.x + golfBall->xVelocity * TIME + 0.5 * xAccel * (pow(TIME, 2));
-    double yPosition = golfBall->pos.y + golfBall->yVelocity * TIME + 0.5 * yAccel * (pow(TIME, 2));
-
-    bool isXLessThanMin = xPosition < 0;
-    bool isXMoreThanMax = xPosition > LCD_WIDTH;
-
-    bool isYLessThanMin = yPosition < 0;
-    bool isYMoreThanMax = yPosition > LCD_HEIGHT;
-
-    // Change direction and set a min or max cap on the (x, y) position of the ball if outermost wall collision
-    if (isXLessThanMin || isXMoreThanMax) {
-        golfBall->xVelocity = -currXVelocity;
-
-        // Set the x position to be the min or max so that the ball does not loop 
-        xPosition = (isXLessThanMin) ? 0 : LCD_WIDTH;
-    }
-
-    if (isYLessThanMin || isYMoreThanMax) {
-        golfBall->yVelocity = -currYVelocity;
-
-        // Set the y position to be the min or max so that the ball does not loop
-        yPosition = (isYLessThanMin) ? 0 : LCD_HEIGHT;
-    }
-
-    // Win Condition --> may need to move 
-    if (inHole(sizeof(ballBitmap)/sizeof(ballBitmap[0]), sizeof(holeBitmap)/sizeof(holeBitmap[0]))) {
-
-    }
-
-  
-    // Semaphore to signal that the incremental position computations have completed -- ready to draw
-    osSemaphoreRelease(canDrawSem);
-    
-    osMutexRelease(ballMutex);			
-  
-  
-    isHit = false;
-    osMutexRelease(isHitMutex);
-  }
+void launchBall(void) {
+	osMutexAcquire(ballMutex, osWaitForever);
+	
+	// Get angle, power, current position
+	double xPrevPos = golfBall->pos.x;
+	double yPrevPos = golfBall->pos.y;
+	
+	double angle = convertAngle(golfBall->direction);
+	uint32_t power = golfBall->power;
+	
+	// Set initial ball velocity
+	golfBall->xVelocity = power * cos(angle);
+	golfBall->yVelocity = power * sin(angle);
+	
+	while (fabs(golfBall->xVelocity) > ZERO_TOLERANCE && fabs(golfBall->yVelocity) > ZERO_TOLERANCE) {
+		
+		//*** Erase the ball at the previous position ***//
+		GLCD_SetTextColor(Green);
+		drawSpriteAt(xPrevPos, yPrevPos, ballBitmap, 3);
+				
+		//*** Update the ball's position using 1D kinematics ***//
+    /*double xAccel = (golfBall->xVelocity < 0) ? FRICTION_ACCEL : -FRICTION_ACCEL;
+    double yAccel = (golfBall->yVelocity < 0) ? FRICTION_ACCEL : -FRICTION_ACCEL;*/
+		
+		// Determine if the ball is out of bounds based on the min and max width and height of the LCD 
+		int xTemp = golfBall->pos.x + golfBall->xVelocity; //* TIME + 0.5 * xAccel * (pow(TIME, 2));
+		int yTemp = golfBall->pos.y + golfBall->yVelocity; //* TIME + 0.5 * yAccel * (pow(TIME, 2));
+		
+		bool xLessMin = xTemp <= 0;
+		bool xMoreMax = xTemp >= LCD_WIDTH;
+		bool yLessMin = yTemp <= 0;
+		bool yMoreMax = yTemp >= LCD_HEIGHT;
+		
+		// x out of bounds
+		if (xLessMin || xMoreMax) {
+			golfBall->pos.x = (xLessMin) ? 0: LCD_WIDTH;
+		} else {
+			golfBall->pos.x = xTemp;
+		}
+		
+		// y out of bounds
+		if (yLessMin || yMoreMax) {
+			golfBall->pos.y = (yLessMin) ? 0 : LCD_HEIGHT;
+		} else {
+			golfBall->pos.y = yTemp;
+		}
+						
+		//*** Draw the ball at the current position ***//
+		GLCD_SetTextColor(White);
+		drawSpriteAt(golfBall->pos.x, golfBall->pos.y, ballBitmap, 3);
+		
+		/*
+		// Update the velocity at the new position
+		golfBall->xVelocity = golfBall->xVelocity + xAccel * TIME;
+		golfBall->yVelocity = golfBall->yVelocity + yAccel * TIME;*/
+		
+		// Change the direction of the current velocity based on the position of the ball
+		// Run bounce algorithm
+		if (xLessMin || xMoreMax) {
+			golfBall->xVelocity = golfBall->xVelocity * -1;
+		}
+		
+		if (yLessMin || yMoreMax) {
+			golfBall->yVelocity = golfBall->yVelocity * -1;
+		}
+		
+		// Set previous position as the current position for the next cycle
+		xPrevPos = golfBall->pos.x;
+		yPrevPos = golfBall->pos.y;
+	}
+	
+	osMutexRelease(ballMutex);
 }
 
-
 bool inHole(int sizeBall, int sizeHole) {
-	// Extract coordinates of the ball
-	int xTopBall = ball->pos.x;
-	int yTopBall = ball->pos.y;
+	// Extract coordinates of the golfBall
+	int xTopBall = golfBall->pos.x;
+	int yTopBall = golfBall->pos.y;
 	
-	int xBotBall = ball->pos.x + SPRITE_COLS * SPRITE_SCALE;
-	int yBotBall = ball->pos.y + sizeBall * SPRITE_SCALE;
+	int xBotBall = golfBall->pos.x + SPRITE_COLS * SPRITE_SCALE;
+	int yBotBall = golfBall->pos.y + sizeBall * SPRITE_SCALE;
 
 	// Extract coordinates of the hole
 	int xTopHole = hole->pos.x;
@@ -467,7 +499,7 @@ bool inHole(int sizeBall, int sizeHole) {
 	int xBotHole = hole->pos.x + SPRITE_COLS * SPRITE_SCALE;
 	int yBotHole = hole->pos.y + sizeHole * SPRITE_SCALE;
 	
-  // If this returns true, then the ball is in the hole
+  // If this returns true, then the golfBall is in the hole
 	return !(xTopBall < xBotHole && 
            xBotBall > xTopHole &&
            yTopBall < yBotHole &&
@@ -494,7 +526,7 @@ uint32_t convertBinaryArrayToDecimal(uint32_t *bits, uint32_t arraySize) {
 
   for (int i = 0; i < arraySize; i++) {
     result |= bits[i];
-    if (i != arrraySize - 1) {
+    if (i != arraySize - 1) {
       result <<= 1;
     }
   }
