@@ -10,8 +10,8 @@
 #include <os_tick.h>
 
 typedef struct { // Struct to store the (x, y) coordinates of in-game sprites
-  uint32_t x;
-  uint32_t y;
+  int x;
+  int y;
 } Pos;
 
 
@@ -50,9 +50,11 @@ void initActors(void);
 
 void drawPixelsAt(int x, int y, int limit);
 void drawSpriteAt(int x, int y, char *bitmap, int bitmap_size);
-void drawBall(void *args);
-void drawHole(void);
-void createArrowBitMap(void *args)
+void drawMovingBall(void *args);
+void drawBall(void);
+void createArrowBitMap(void *args);
+uint32_t convertBinaryArrayToDecimal(uint32_t *bits, uint32_t arraySize);
+void drawArrow(void *args);
 
 void animate(void *args);
 bool inHole(int ball_size, int hole_size);
