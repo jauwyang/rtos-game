@@ -17,6 +17,7 @@ typedef struct { // Struct to store the (x, y) coordinates of in-game sprites
 
 typedef struct {
 	Pos pos;
+	Pos arrowPos[2];
 	char *bitmap;
 	
 	int xVelocity;
@@ -46,17 +47,16 @@ void setupGame(void);
 
 double convertAngle(uint32_t rawAngle);
 
-void initActors(void);
 
 void drawPixelsAt(int x, int y, int limit);
 void drawSpriteAt(int x, int y, char *bitmap, int bitmap_size);
 
 void drawBall(void);
-void orientStillBall(double unprocAngle);
+
+void drawArrow(double angle, int centerX, int centerY);
 
 void createArrowBitMap(void *args);
 uint32_t convertBinaryArrayToDecimal(uint32_t *bits, uint32_t arraySize);
-void drawArrow(void *args);
 
 void checkEndGame(void *args);
 
