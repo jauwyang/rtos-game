@@ -21,7 +21,7 @@ const double ACCEL = 0.1;
 // Note: the direction is kept in degrees and is not converted in accordance to the map. It must be updated immediately before using.
 uint32_t prevPlayerDirection = 0;  // value to add hysteresis to prevent jittering in the pot output
 
-const int MAP_CONVERSION_ANGLE = 30; // Note: 90 degrees means straight up.
+const int MAP_CONVERSION_ANGLE = -95-90; // Note: 90 degrees means straight up.
 
 // Position Struct, Actor Mutex and Data
 extern osMutexId_t ballMutex;
@@ -147,10 +147,19 @@ void teleportBall(void *args) {
 		
 	// Randomly teleport ball to a different location. It is possible for the ball to return to the same spot or in the hole itself.
 	if (inTeleporter(BALL_GLCD_WIDTH, ENVIRONMENT_GLCD_WIDTH)) {
-      golfBall->pos.x = rand() % ((LCD_WIDTH - ENV_SIZE) - ENV_SIZE + 1) + ENV_SIZE;
-      golfBall->pos.y = rand() % ((LCD_HEIGHT - ENV_SIZE) - ENV_SIZE + 1) + ENV_SIZE;
-    } 
+		printf("BALL:(%d, %d)\n", golfBall->pos.x, golfBall->pos.y);  // (61, 1) , (55, 0), (60, 1)
+		printf("TELEP:(%d, %d)\n", teleporter->pos.x, teleporter->pos.y);  // (38, -7), (38, -6), (38, -5)
+		printf("TELEPORTED");
+		golfBall->pos.x = rand() % ((LCD_WIDTH - ENV_SIZE) - ENV_SIZE + 1) + ENV_SIZE;
+		golfBall->pos.y = rand() % ((LCD_HEIGHT - ENV_SIZE) - ENV_SIZE + 1) + ENV_SIZE;
+		golfBall->xVelocity = 0;
+		golfBall->yVelocity = 0;
+		
 
+		printf("TP X POS: %d\n", golfBall->pos.x); // 189
+    	printf("TP Y POS: %d\n", golfBall->pos.y); // 41
+    } 
+     
     osMutexRelease(ballMutex);
   }
 }
@@ -358,13 +367,12 @@ void readDirectionInput(void *args) {
 
     // Update golfBall direction if potentiometer direction changes
     if (currAngle - prevPlayerDirection > 5) {  // add a hysteresis to prevent unwanted jitter 
-			osMutexAcquire(ballMutex, osWaitForever);
+		osMutexAcquire(ballMutex, osWaitForever);
 
-      golfBall -> direction = currAngle;
-      prevPlayerDirection = currAngle;
-
-			printf("%d\n", currAngle - MAP_CONVERSION_ANGLE);
-			osMutexRelease(ballMutex);
+		golfBall -> direction = currAngle;
+		prevPlayerDirection = currAngle;
+		//printf("%d\n", currAngle + MAP_CONVERSION_ANGLE);
+		osMutexRelease(ballMutex);
     } 
   }
 }
@@ -420,12 +428,12 @@ void launchBall(void) {
 	uint32_t power = golfBall->power;
 	
 	// Set initial ball velocity
-	golfBall->xVelocity = 2* power * cos(angle*2);
+	golfBall->xVelocity = 2* power * cos(angle*2); // double the power to scale it to a velocity suitable for golf course size
 	golfBall->yVelocity = 2* power * sin(angle*2);
 	
 			
-	printf("Vx: %d\n", golfBall->xVelocity);
-	printf("Vy: %d\n", golfBall->yVelocity);
+	// printf("Vx: %d\n", golfBall->xVelocity);
+	// printf("Vy: %d\n", golfBall->yVelocity);
 	
 	while (abs(golfBall->xVelocity) != 0  && abs(golfBall->yVelocity) != 0) {
 		
@@ -508,10 +516,10 @@ bool inHole(int sizeBall, int sizeHole) {
 
 
 bool inTeleporter(int sizeBall, int sizeTeleporter) {
-  	// Extract coordinates of the golfBall
+  // Extract coordinates of the golfBall
 	int xTopBall = golfBall->pos.x;
 	int yTopBall = golfBall->pos.y;
-
+	
 	int xBotBall = golfBall->pos.x + SPRITE_COLS * SPRITE_SCALE;
 	int yBotBall = golfBall->pos.y + sizeBall * SPRITE_SCALE;
 
@@ -522,7 +530,7 @@ bool inTeleporter(int sizeBall, int sizeTeleporter) {
 	int xBotTeleporter = teleporter->pos.x + SPRITE_COLS * SPRITE_SCALE;
 	int yBotTeleporter = teleporter->pos.y + sizeTeleporter * SPRITE_SCALE;
 	
-  	// If this returns true, then the golfBall is in the teleporter
+  // If this returns true, then the golfBall is in the teleporter
 	return (xTopBall < xBotTeleporter && 
           xBotBall > xTopTeleporter &&
           yTopBall < yBotTeleporter &&
@@ -540,7 +548,7 @@ bool inTeleporter(int sizeBall, int sizeTeleporter) {
 
 // Converts the angle (degrees) obtained from potentiometer into radians and positions it correctly w.r.t. map orientation
 double convertAngle(int32_t rawAngle) {
-    return (rawAngle + MAP_CONVERSION_ANGLE) * M_PI / 180 ;
+    return (rawAngle + MAP_CONVERSION_ANGLE) * -M_PI / 180 ;
 }
 
 
