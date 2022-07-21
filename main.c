@@ -1,13 +1,9 @@
 #include "gameLogic.h"
 
-osMutexId_t powerMutex;
-osMutexId_t playerDirectionMutex;
 osMutexId_t ballMutex;
 osMutexId_t scoreMutex;
 osMutexId_t isHitMutex;
 osMutexId_t arrowBitMapMutex;
-
-osSemaphoreId_t canDrawSem;
 
 osThreadId_t hitBallID;
 osThreadId_t writeScoreID;
@@ -39,12 +35,8 @@ int main()
 	LPC_ADC->ADCR = (1<<2) | (4<<8) | (1<<21);
 
 
-	// Init the semaphore
-	canDrawSem = osSemaphoreNew(1, 0 , NULL);
 	
 	// Create the mutexes
-	powerMutex = osMutexNew(NULL);
-	playerDirectionMutex = osMutexNew(NULL);
 	ballMutex = osMutexNew(NULL);
 	scoreMutex = osMutexNew(NULL);
 	isHitMutex = osMutexNew(NULL);
@@ -65,7 +57,6 @@ int main()
 	hitBallID = osThreadNew(hitBall, NULL, NULL); 
 	//osThreadNew(createArrowBitMap, NULL, NULL);
 	//osThreadNew(drawArrow, NULL, NULL);
-	//osThreadNew(drawMovingBall, NULL, NULL);
 	//osThreadNew(createArrowBitMap, NULL, NULL);
 	writeScoreID = osThreadNew(writeGolfScore, NULL, NULL);
 	osThreadNew(checkEndGame, NULL, NULL);
