@@ -2,8 +2,6 @@
 
 osMutexId_t ballMutex;
 osMutexId_t scoreMutex;
-osMutexId_t isHitMutex;
-osMutexId_t arrowBitMapMutex;
 
 osThreadId_t hitBallID;
 osThreadId_t writeScoreID;
@@ -15,10 +13,8 @@ int main()
 	
 	// Configure the LEDs as outputs
 	initLEDs();
-	
 
 	// Initialize the GLCD
-
 	GLCD_Init();
 	GLCD_Clear(Green);
 	GLCD_SetTextColor(Green);
@@ -34,13 +30,9 @@ int main()
 	// Select pin 2, set CLK frequency, enable the ADC
 	LPC_ADC->ADCR = (1<<2) | (4<<8) | (1<<21);
 
-
-	
 	// Create the mutexes
 	ballMutex = osMutexNew(NULL);
 	scoreMutex = osMutexNew(NULL);
-	isHitMutex = osMutexNew(NULL);
-	arrowBitMapMutex = osMutexNew(NULL);
 	
 	// Set up the Actors (Hole and Ball)
 	setupGame();
@@ -51,15 +43,10 @@ int main()
 	osThreadNew(readPowerInput, NULL, NULL);
 	osThreadNew(updateLEDs, NULL, NULL);
 	osThreadNew(readDirectionInput, NULL, NULL);
-	//osThreadNew(hitBall, NULL, NULL);
-	//osThreadNew(drawRando, NULL, NULL);
-	//osThreadNew(draw, NULL, NULL);
 	hitBallID = osThreadNew(hitBall, NULL, NULL); 
-	//osThreadNew(createArrowBitMap, NULL, NULL);
-	//osThreadNew(drawArrow, NULL, NULL);
-	//osThreadNew(createArrowBitMap, NULL, NULL);
-	writeScoreID = osThreadNew(writeGolfScore, NULL, NULL);
 	osThreadNew(checkEndGame, NULL, NULL);
+	osThreadNew(teleportBall, NULL, NULL);
+	osThreadNew(writeGolfScore, NULL, NULL);
 	
 	osKernelStart();
 
