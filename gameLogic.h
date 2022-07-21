@@ -33,7 +33,7 @@ typedef struct {
 	Pos pos;
 	char *bitmap;
 	
-} Hole;
+} Environment;
 
 
 void initLEDs(void);
@@ -44,23 +44,19 @@ void hitBall(void *args);
 void launchBall(void);
 void writeGolfScore(void *args);
 void setupGame(void);
+void teleportBall(void *args);
 
-double convertAngle(uint32_t rawAngle);
-
+double convertAngle(int32_t rawAngle);
 
 void drawPixelsAt(int x, int y, int limit);
 void drawSpriteAt(int x, int y, char *bitmap, int bitmap_size);
-
-void drawBall(void);
-
-void drawArrow(double angle, int centerX, int centerY);
 
 void createArrowBitMap(void *args);
 uint32_t convertBinaryArrayToDecimal(uint32_t *bits, uint32_t arraySize);
 
 void checkEndGame(void *args);
 
-void animate(void *args);
 bool inHole(int ball_size, int hole_size);
+bool inTeleporter(int sizeBall, int sizeTeleporter);
 
 #endif

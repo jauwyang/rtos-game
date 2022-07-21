@@ -58,8 +58,9 @@ int main()
 	//osThreadNew(createArrowBitMap, NULL, NULL);
 	//osThreadNew(drawArrow, NULL, NULL);
 	//osThreadNew(createArrowBitMap, NULL, NULL);
-	writeScoreID = osThreadNew(writeGolfScore, NULL, NULL);
+	//writeScoreID = osThreadNew(writeGolfScore, NULL, NULL);
 	osThreadNew(checkEndGame, NULL, NULL);
+	osThreadNew(teleportBall, NULL, NULL);
 	
 	osKernelStart();
 
